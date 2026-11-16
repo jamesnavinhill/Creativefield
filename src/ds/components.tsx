@@ -4672,7 +4672,7 @@ export function Hero({ title, text, media, stage, spotlight, accent, aside, chil
   const words = title.split(" ");
   const heading = stage || spotlight ? words.map((word, i) => <span key={i} className={cx("ds-hero__word", accent && word === accent && "ds-hero__word--accent")} style={{ animationDelay: `${i * 90}ms` }}>{word}</span>) : title;
   if (spotlight) return (
-    <section className="ds-hero ds-hero--spotlight">
+    <section className={cx("ds-hero ds-hero--spotlight", compact && "ds-hero--compact")}>
       <div className="ds-hero__bg" aria-hidden>
         {media}
         <span className="ds-hero__scrim" />

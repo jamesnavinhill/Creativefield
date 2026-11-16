@@ -2418,3 +2418,9 @@ button.ds-castcard__main { cursor: pointer; }
 .ds-hero--spotlight .ds-hero__title { font-size: clamp(2.6rem, 5.4vw, 5rem); line-height: 0.98; letter-spacing: -0.035em; text-shadow: 0 2px 32px color-mix(in srgb, var(--surface-page) 90%, transparent); }
 .ds-hero--spotlight .ds-hero__text { font-size: var(--text-md); line-height: var(--lh-md); color: var(--text-primary); opacity: 0.8; }
 .ds-hero--spotlight .ds-hero__actions { margin-top: var(--space-2); max-width: calc(520px * var(--ui-scale)); }
+/* A tool's hero once it has its input: the same spotlight at about half height, title and line on one line each. */
+.ds-hero--spotlight { transition: min-height var(--dur-med) var(--ease), padding var(--dur-med) var(--ease); }
+.ds-hero--spotlight.ds-hero--compact { min-height: calc(150px * var(--ui-scale)); padding: var(--space-5) var(--space-8); }
+.ds-hero--spotlight.ds-hero--compact .ds-hero__copy { gap: var(--space-1); max-width: none; min-width: 0; }
+.ds-hero--spotlight.ds-hero--compact .ds-hero__title { font-size: clamp(1.5rem, 2.6vw, 2.4rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ds-hero--spotlight.ds-hero--compact .ds-hero__text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }

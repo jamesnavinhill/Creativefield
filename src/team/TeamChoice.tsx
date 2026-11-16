@@ -3,6 +3,18 @@ import {ChevronRight} from "lucide-react";
 import {Button,ChoiceDialog,MediaPickerDialog,Meta,ModelCard,Pill,Row,type ChoiceOption,type OptionStatus} from "../ds";
 import {friendlyMediaName} from "./media-names";
 import "./pick.css";
+import {splitModel} from "./menu-groups";
+import {cardLoop} from "./reels";
+
+/** Every workspace's model card says what it does in large type and which model does it in the small line under it:
+    "HyperFlow H3 Flash text to video" becomes "Text to video" over "HyperFlow H3 Flash · Local ComfyUI". */
+export function modelCardText(display:string,subtitle?:string):{title:string;subtitle:string}{
+  const {model,rest}=splitModel(display);
+  /* The small line names models, never whole workflow titles: "FLUX 3 Klein text to image" there becomes "FLUX 3 Klein". */
+  const parts=(subtitle??"Local ComfyUI").split(" · ").map(part=>splitModel(part).model??part);
+  const small=[...(model&&rest?[model]:[]),...parts].filter((part,i,all)=>all.indexOf(part)===i).join(" · ");
+  return {title:model&&rest?rest:display,subtitle:small};
+}
 
 export type TeamChoiceOption={value:string;label:string;note?:string;disabled?:boolean;status?:OptionStatus;detail?:ReactNode;/** The picture or symbol at the start of the box. */icon?:ReactNode;preview?:{src:string;video?:boolean}};
 /** Existing studio triggers and selection surfaces; never a browser-native select. `prefix` writes the quiet label before the value; turn it off when the value is the whole action. `size` is the pill height (`lg` for a full label like "Choose from library"). */
@@ -16,7 +28,7 @@ export function TeamChoice({label,display,value,options,onChange,disabled=false,
   // Media choices are picked by looking at them: a picture grid with plain names instead of a list of file names.
   const visual=options.length>0&&options.every(o=>o.preview);
   return <>
-    {!hideTrigger&&(variant==="model"?<ModelCard title={display} subtitle={subtitle??"Local ComfyUI"} image={image} video={video} onChange={disabled?undefined:()=>setOpen(true)}/>:variant==="pill"?<Pill quiet size={size} type="button" disabled={disabled} aria-label={label} onClick={()=>setOpen(true)}>{prefix&&<span className="ds-pill__prefix">{label}</span>}{display}{size!=="lg"&&<ChevronRight size={14}/>}</Pill>:<Row label={label} display={display} disabled={disabled} onClick={()=>setOpen(true)}/>)}
+    {!hideTrigger&&(variant==="model"?<ModelCard {...modelCardText(display,subtitle)} image={image} video={cardLoop(value,display)??video} onChange={disabled?undefined:()=>setOpen(true)}/>:variant==="pill"?<Pill quiet size={size} type="button" disabled={disabled} aria-label={label} onClick={()=>setOpen(true)}>{prefix&&<span className="ds-pill__prefix">{label}</span>}{display}{size!=="lg"&&<ChevronRight size={14}/>}</Pill>:<Row label={label} display={display} disabled={disabled} onClick={()=>setOpen(true)}/>)}
     {visual||!options.length
       ?<MediaPickerDialog open={open&&!disabled} title={label} onClose={close} selected={value} upload={upload?{...upload,onFile:file=>{upload.onFile(file);close();}}:undefined}
         items={options.map(o=>({id:o.value,src:o.preview?.src??"",video:o.preview?.video,label:friendlyMediaName(o.label),disabled:o.disabled,info:<>{o.label}{o.note&&<><br/>{o.note}</>}</>}))}

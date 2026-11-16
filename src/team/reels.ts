@@ -95,3 +95,27 @@ export function reelForManifest(id?: string): string | undefined {
 export function reelForSection(section: string): string | undefined {
   return SECTION_REELS[section];
 }
+
+/** The Creative Field loop behind a workspace's model card, chosen by what the workflow does (its id and its function
+    name), so every workspace opens on the same characters as All tools. Undefined when nothing fits. */
+const CARD_LOOPS:[RegExp,string][]=[
+  [/openjutsu|replace|scail|swap-person|character/i,"swap-person"],
+  [/lip|talk|infinitetalk|voice/i,"talk"],
+  [/effect/i,"effect-clips"],
+  [/keyframe|flf|first.and.last/i,"keyframes"],
+  [/previs|block|make.it.real/i,"block"],
+  [/storyboard|film|shot/i,"film"],
+  [/upscale|enhance|sharpen|esrgan|seedvr|interpolat|finish/i,"menu-upscale"],
+  [/trim|edit.video|cut/i,"menu-edit"],
+  [/relight/i,"menu-relight"],
+  [/angle|turn/i,"menu-angles"],
+  [/3d|mesh|hunyuan3d|trellis/i,"model3d"],
+  [/ad.studio|marketing|product/i,"ad"],
+  [/t2i|text.to.image|picture|image/i,"menu-picture"],
+  [/t2v|i2v|text.to.video|image.to.video|video|motion|animate/i,"video"],
+];
+export function cardLoop(...hints:(string|undefined)[]):string|undefined{
+  const key=hints.filter(Boolean).join(" ");
+  const hit=CARD_LOOPS.find(([re])=>re.test(key));
+  return hit?`/examples/tiles/${hit[1]}.mp4`:undefined;
+}

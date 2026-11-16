@@ -1,5 +1,5 @@
 import {Hero,RotatingVideo} from "../ds";
-import {POOL_VIDEOS,reelForManifest} from "./reels";
+import {POOL_VIDEOS,cardLoop,reelForManifest} from "./reels";
 import {LOAD_TURN} from "./reload-turn";
 
 /** The encouraging line over each tool's results, by what the tool does. Words only from this table. */
@@ -32,8 +32,8 @@ export type HeroKind=keyof typeof LINES;
 export function ToolHero({kind,workflowId,latest,compact}:{kind:HeroKind;workflowId?:string;/** Half height, title on one line: the tool has its input and the work area gets the room. */compact?:boolean;/** The newest finished clip, used when the tool has no reel of its own. */latest?:string}){
   /* Every kind starts the placeholder set at a different clip, so neighbouring areas do not open on the same loop. */
   const start=(Object.keys(LINES).indexOf(kind)+LOAD_TURN)%POOL_VIDEOS.length;
-  const line=LINES[kind],reel=(workflowId?reelForManifest(workflowId):undefined)??latest;
+  const line=LINES[kind],reel=(workflowId?cardLoop(workflowId)??reelForManifest(workflowId):undefined)??cardLoop(kind)??latest;
   /* Rule 11/49: motion is off when the system asks for less. The clip stays in place as its first
      frame instead of looping, so the tool still shows what it makes. */
-  return <Hero stage compact={compact} title={line.title} text={line.text} media={<RotatingVideo srcs={reel?[reel,...POOL_VIDEOS.filter(v=>v!==reel)]:POOL_VIDEOS.slice(start).concat(POOL_VIDEOS.slice(0,start))}/>}/>;
+  return <Hero spotlight compact={compact} title={line.title} text={line.text} media={<RotatingVideo srcs={reel?[reel,...POOL_VIDEOS.filter(v=>v!==reel)]:POOL_VIDEOS.slice(start).concat(POOL_VIDEOS.slice(0,start))}/>}/>;
 }
