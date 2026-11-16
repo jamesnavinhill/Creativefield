@@ -13,8 +13,6 @@
 
   <b><a href="#install-it-in-five-steps">Install in five steps</a> · <a href="https://www.creativefield.app/">Try it online</a> · <a href="#what-is-new">What is new</a></b>
 
-  <a href="https://www.creativefield.app/examples/creativefield-promo-v3.mp4"><img src="docs/screens/creativefield/creativefield-promo-v3.webp" alt="Watch the CreativeField introduction video" width="100%"></a>
-
   [▶ Watch the CreativeField video](https://www.creativefield.app/examples/creativefield-promo-v3.mp4)
 
   # CreativeField
