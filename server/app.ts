@@ -27,6 +27,7 @@ import {videoFrameInspectionRoutes} from "./video-frame-inspection";
 import {storyboardExecutionRoutes} from "./storyboard-execution";
 import {storyboardPlanRoutes} from "./storyboard-plan";
 import {videoPromptRoutes} from "./video-prompt";
+import {updateRoutes} from "./update-check";
 import {runEstimateRoutes} from "./run-estimate";
 import {aiTextSettings,setActiveTextProvider} from "./ai-text";
 import {referencePlanRoutes} from "./reference-plan";
@@ -405,6 +406,7 @@ export async function buildServer(config: ServerConfig, pool: Pool, dependencies
   const storyboards=await storyboardExecutionRoutes(app,pool,store,catalogue,registry);
   await storyboardPlanRoutes(app,pool);
   await videoPromptRoutes(app,pool,store);
+  await updateRoutes(app);
   await runEstimateRoutes(app,pool);
   await referencePlanRoutes(app,pool);
   await referenceDescribeRoutes(app,pool,store);

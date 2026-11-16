@@ -27,6 +27,7 @@ import {runFacts} from "./run-facts";
 import {feedMode,feedScope,feedVisibleRuns} from "./media-feed";
 import {groupMenu} from "./menu-groups";
 import {imageEntryTool,mediumMenus} from "./tool-menus";
+import {UpdateAlert} from "./UpdateAlert";
 import {JobQueueIndicator} from "./JobQueueIndicator";
 import {TeamChoice} from "./TeamChoice";
 import {CapabilityCatalogue} from "../ui/CapabilityCatalogue";
@@ -1059,6 +1060,7 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
       ]}
       end={<>
         {!phone&&runControls}
+        <UpdateAlert hosted={hosted}/>
         <IconLink label="Source code on GitHub" href="https://github.com/rhymeas/Creativefield"><Github size={phone?18:16}/></IconLink>
         <IconButton label="How it works" onClick={()=>setGuide(true)}><CircleHelp size={phone?18:16}/></IconButton>
         {jobs}
