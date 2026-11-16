@@ -793,6 +793,15 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
       if(target&&port)setup={capabilityId:target.id,inputs:{[port]:{src:example.src,name:example.name}}};
     }else setup=request;
     const target=setup&&catalogue.find(m=>m.id===setup.capabilityId);
+    /* Online the local workflow is missing: the example opens the cloud tool with the same files and prompt. */
+    if(!target&&hosted&&canCreate&&project&&setup?.cloud){
+      const cloud=setup.cloud;
+      return async()=>{
+        const inputs:Record<string,string>={};
+        for(const [port,media] of Object.entries(cloud.inputs))inputs[port]=await mediaAssetId(media);
+        setRouterIncoming({workspaceId:workspace.id,projectId:project.id,inputs,prompt:cloud.prompt});location.hash=cloud.hash;
+      };
+    }
     if(!canCreate||!project||!setup||!target)return undefined;
     const image=isImageCapability(target),place=image?undefined:recreatePlace(target),files=setup.inputs,controls=setup.controls??{};
     if(!image&&!place)return undefined;

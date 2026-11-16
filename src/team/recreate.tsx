@@ -10,7 +10,9 @@ export const useRecreate=()=>useContext(RecreateContext);
 
 /** Recreate for media that is not a run here (the bundled examples): the tool, the files for its ports and its settings.
  *  The app uploads the files into the project and opens the tool filled in; nothing where that tool cannot open. */
-export type RecreateSetup={capabilityId:string;inputs:Record<string,{src:string;name:string}>;controls?:Record<string,string|number|boolean>}
+export type RecreateSetup={capabilityId:string;inputs:Record<string,{src:string;name:string}>;controls?:Record<string,string|number|boolean>;
+  /** Where the same example opens online, where the local workflow is missing: a cloud tool's screen, its files and the prompt. */
+  cloud?:{hash:string;inputs:Record<string,{src:string;name:string}>;prompt:string}}
   /** An example with no recorded setup: a picture opens the image edit tool with it, a clip opens Restyle with it. */
   |{example:{src:string;name:string;kind:"image"|"video"}};
 export type RecreateMedia=(setup:RecreateSetup)=>(()=>Promise<void>)|undefined;

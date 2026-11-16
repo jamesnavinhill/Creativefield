@@ -3349,7 +3349,8 @@ function mediaAt(root:HTMLElement|null){
   return media&&src?{src,name:media.getAttribute("alt")||media.getAttribute("aria-label")||"Preview",mediaType:media.tagName==="VIDEO"?"video" as const:"image" as const}:null;
 }
 function hasMediaNode(node:ReactNode):boolean{
-  return Children.toArray(node).some(child=>isValidElement<{children?:ReactNode}>(child)&&(["img","video"].includes(String(child.type))||hasMediaNode(child.props.children)));
+  /* LazyVideo is a clip too: feeds and example tiles show every clip through it (rule 68). */
+  return Children.toArray(node).some(child=>isValidElement<{children?:ReactNode}>(child)&&(["img","video"].includes(String(child.type))||child.type===LazyVideo||hasMediaNode(child.props.children)));
 }
 /** `info` is shown beside the media in the full view (how it was made); `onOpen` runs when the full view opens. */
 function useSurfacePreview<T extends HTMLElement=HTMLDivElement>(options:{info?:ReactNode;onOpen?:()=>void;onRecreate?:()=>void;onDelete?:()=>Promise<void>|void;navigable?:boolean;compare?:{src:string;name:string}}={}){

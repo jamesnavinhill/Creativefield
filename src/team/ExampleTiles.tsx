@@ -1,6 +1,6 @@
 import {useEffect,useState,type ReactNode} from "react";
 import {Block,LazyVideo,MediaViewerInfo,ResultGrid,ResultTile} from "../ds";
-import {FEATURED_VIDEO_EXAMPLES,LOW_PRIORITY_EXAMPLES,OPENJUTSU_SHOWCASE,POOL_VIDEOS,SQUAREHEAD_EXAMPLE_IMAGES,SQUAREHEAD_EXAMPLE_VIDEOS} from "./reels";
+import {EXAMPLE_RECIPES,FEATURED_VIDEO_EXAMPLES,LOW_PRIORITY_EXAMPLES,OPENJUTSU_SHOWCASE,POOL_VIDEOS,RECIPE_VIDEOS,SQUAREHEAD_EXAMPLE_IMAGES,SQUAREHEAD_EXAMPLE_VIDEOS} from "./reels";
 import {LOAD_TURN} from "./reload-turn";
 import {useRecreateMedia} from "./recreate";
 
@@ -14,7 +14,7 @@ export function ExampleTiles({kind,count,leading,leadingCount=0,videoSources,ima
   const [pictures,setPictures]=useState<string[]>([]),[hidden,setHidden]=useState<string[]>(readHidden);
   const hide=(src:string)=>{const next=[...new Set([...readHidden(),src])];try{localStorage.setItem(HIDDEN_EXAMPLES,JSON.stringify(next));}catch{/* storage may be unavailable: hidden for this view only */}setHidden(next);};
   useEffect(()=>{let current=true;if(kind==="image")fetch("/examples/pool.json").then(r=>r.ok?r.json():{images:[]}).then((p:{images?:string[]})=>{if(current&&Array.isArray(p.images))setPictures(p.images.map(f=>`/examples/${f}`));}).catch(()=>{});return()=>{current=false;};},[kind]);
-  const all=(kind==="video"?videoSources??[...FEATURED_VIDEO_EXAMPLES,...SQUAREHEAD_EXAMPLE_VIDEOS,...POOL_VIDEOS]:imageSources??pictures).filter(src=>!hidden.includes(src));
+  const all=(kind==="video"?videoSources??[...new Set([...FEATURED_VIDEO_EXAMPLES,...SQUAREHEAD_EXAMPLE_VIDEOS,...RECIPE_VIDEOS,...POOL_VIDEOS])]:imageSources??pictures).filter(src=>!hidden.includes(src));
   const featured=all.filter(src=>(kind==="video"?[...FEATURED_VIDEO_EXAMPLES,...SQUAREHEAD_EXAMPLE_VIDEOS]:SQUAREHEAD_EXAMPLE_IMAGES).includes(src));
   const showcases=all.some(src=>OPENJUTSU_SHOWCASE.some(item=>item.result===src))?OPENJUTSU_SHOWCASE.map(item=>item.result):[];
   /* OpenJutsu first, then the good examples taking turns at the top on each visit, and the early test clips always last. */
@@ -29,7 +29,19 @@ function ExampleTile({src,kind,caption,onHide}:{src:string;kind:"image"|"video";
   const [failed,setFailed]=useState(false);
   const recreate=useRecreateMedia()({example:{src,name:src.split("/").pop()??`example.${kind==="image"?"png":"mp4"}`,kind}});
   if(failed)return null;
-  return <div draggable onDragStart={event=>{event.dataTransfer.setData("application/x-comfyfield-example",src);event.dataTransfer.effectAllowed="copy";}} onErrorCapture={event=>{const target=event.target as HTMLElement;if((target.tagName==="IMG"||target.tagName==="VIDEO")&&target.getAttribute("src")===src)setFailed(true);}}>{OPENJUTSU_SHOWCASE.some(item=>item.result===src)?<ShowcaseTile src={src} onHide={onHide}/>:SQUAREHEAD_EXAMPLE_VIDEOS.includes(src)||SQUAREHEAD_EXAMPLE_IMAGES.includes(src)?<SquareheadTile src={src} kind={kind} onHide={onHide}/>:<ResultTile caption={caption} onDelete={onHide} {...REMOVE} onRecreate={recreate?()=>void recreate():undefined}>{kind==="video"?<LazyVideo src={src}/>:<img draggable={false} loading="lazy" src={src} alt=""/>}</ResultTile>}</div>;
+  return <div draggable onDragStart={event=>{event.dataTransfer.setData("application/x-comfyfield-example",src);event.dataTransfer.effectAllowed="copy";}} onErrorCapture={event=>{const target=event.target as HTMLElement;if((target.tagName==="IMG"||target.tagName==="VIDEO")&&target.getAttribute("src")===src)setFailed(true);}}>{OPENJUTSU_SHOWCASE.some(item=>item.result===src)?<ShowcaseTile src={src} onHide={onHide}/>:SQUAREHEAD_EXAMPLE_VIDEOS.includes(src)||SQUAREHEAD_EXAMPLE_IMAGES.includes(src)?<SquareheadTile src={src} kind={kind} onHide={onHide}/>:EXAMPLE_RECIPES[src]?<RecipeTile src={src} onHide={onHide}/>:<ResultTile caption={caption} onDelete={onHide} {...REMOVE} onRecreate={recreate?()=>void recreate():undefined}>{kind==="video"?<LazyVideo src={src}/>:<img draggable={false} loading="lazy" src={src} alt=""/>}</ResultTile>}</div>;
+}
+
+/** A Creative Field loop made in this app: Recreate opens Create Video with its start picture, prompt and seed (online:
+    the cloud Create Video with the same picture and prompt). */
+function RecipeTile({src,onHide}:{src:string;onHide:()=>void}){
+  const recipe=EXAMPLE_RECIPES[src]!,still={src:recipe.still,name:recipe.still.split("/").pop()!};
+  const recreate=useRecreateMedia()({capabilityId:"hyperflow-h3-flash-i2v",inputs:{start_image:still},controls:{prompt:recipe.prompt,width:1024,height:576,length:3,quality:"normal",seed:recipe.seed},
+    cloud:{hash:"#video/create",inputs:{start_image:still},prompt:recipe.prompt}});
+  return <ResultTile caption="Example" onDelete={onHide} {...REMOVE} onRecreate={recreate?()=>void recreate():undefined}
+    viewerInfo={<MediaViewerInfo mode="Image to video" model="HyperFlow H3 Flash" inputs={[{src:recipe.still,label:"Start picture"}]} prompt={recipe.prompt} facts={[{label:"Size",value:"1024 × 576 · 3 s"},{label:"Seed",value:String(recipe.seed)}]}/>}>
+    <LazyVideo src={src} label={recipe.title}/>
+  </ResultTile>;
 }
 
 const PROMPT="Replace the person in <Video 1> with the fantasy character in <Picture 1>. Clearly reproduce the character face, skin colour, hair and complete costume from the picture. Preserve the video performance, body motion, camera and background.";

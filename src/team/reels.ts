@@ -119,3 +119,23 @@ export function cardLoop(...hints:(string|undefined)[]):string|undefined{
   const hit=CARD_LOOPS.find(([re])=>re.test(key));
   return hit?`/examples/tiles/${hit[1]}.mp4`:undefined;
 }
+
+/** The Creative Field loops made in this app (HyperFlow H3 Flash image to video, 1024×576, 3 s), each with what it
+    was made from, so Recreate opens the tool filled in: locally the same workflow, start picture, prompt and seed;
+    online the cloud Create Video (Seedance) with the same start picture and prompt. Composited clips (cuts, wipes,
+    overlays) are not one run and are left out. */
+export type ExampleRecipe={title:string;still:string;prompt:string;seed:number};
+const T="/examples/tiles/";
+export const EXAMPLE_RECIPES:Record<string,ExampleRecipe>={
+  [`${T}video.mp4`]:{title:"Hoverbike in the neon city",still:`${T}video.webp`,seed:1116,prompt:"The hoverbike speeds forward through the neon city, the camera tracks alongside, rain streaks and light trails rush past. His head and yellow CF beanie stay steady and in focus."},
+  [`${T}effect-clips.mp4`]:{title:"Ember storm on a dune",still:`${T}effect-clips.webp`,seed:1116,prompt:"The storm of glowing embers spirals faster around him, sparks rushing upward, his hoodie flutters, the camera pushes in slowly."},
+  [`${T}ad.mp4`]:{title:"Sneaker splash",still:`${T}ad.webp`,seed:1116,prompt:"Water droplets splash slowly around the sneaker on the pedestal, the camera orbits slowly, rim light glints."},
+  [`${T}talk.mp4`]:{title:"Radio booth",still:`${T}talk.webp`,seed:1116,prompt:"He speaks into the microphone with natural lip movement and small head gestures, warm dust floats in the light."},
+  [`${T}model3d.mp4`]:{title:"Vinyl figure on a turntable",still:`${T}model3d.webp`,seed:1116,prompt:"The vinyl figure turns slowly on the white turntable, a smooth full rotation, soft studio light."},
+  [`${T}filmstudio.mp4`]:{title:"On the grey film set",still:`${T}filmstudio.webp`,seed:1116,prompt:"He snaps the clapperboard shut, the camera on the dolly rolls slowly forward along the track, work lights flicker."},
+  [`${T}menu-picture.mp4`]:{title:"Orbital greenhouse",still:`${T}picture.webp`,seed:1116,prompt:"The character floats slowly in the orbital greenhouse, ferns sway, sunbeams drift, the camera drifts gently."},
+  [`${T}menu-character.mp4`]:{title:"Character select",still:`${T}character.webp`,seed:1116,prompt:"The two characters on the pedestals turn their heads toward the camera, spotlights pulse, light bars glow."},
+  [`${T}menu-angles.mp4`]:{title:"Turnaround orbit",still:`${T}angles.webp`,seed:1116,prompt:"The camera orbits slowly around the character, smooth continuous arc, soft studio light."},
+  [`${T}menu-relight.mp4`]:{title:"Street from day to night",still:`${T}new-look-before.webp`,seed:1117,prompt:"Time-lapse: the sunny street turns from golden afternoon into deep blue night, the sun sets behind the palms, street lamps and shop neon switch on and glow, the character stays still on the skateboard, the camera holds still."},
+};
+export const RECIPE_VIDEOS=Object.keys(EXAMPLE_RECIPES);
