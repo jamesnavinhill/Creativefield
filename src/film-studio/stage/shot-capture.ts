@@ -4,12 +4,13 @@
  * scene builder and frame painter as the live viewport, so a still, a clip and
  * the stage never disagree about where anything stands.
  */
-import {CanvasTexture, Fog, Mesh, MeshStandardMaterial, NearestFilter, PerspectiveCamera, PlaneGeometry, RepeatWrapping, SRGBColorSpace, WebGLRenderer} from "three";
+import {Mesh, MeshStandardMaterial, PerspectiveCamera, SRGBColorSpace, WebGLRenderer} from "three";
 import {evaluateFrame} from "../score/evaluate";
 import type {StageScore} from "../score/schema";
 import type {SceneBlock} from "../analysis-contract";
 import {applyCamera, applySceneSet, applyStageFrame, buildStageScene, type BuiltScene} from "./StageViewport";
 import {clipFrameTimes} from "./clip-timing";
+import {enableStudioRenderer, STUDIO} from "./studio-look";
 
 /**
  * How a clip looks. "stage" is the studio's own dark diorama. "handoff" is the pass a video model
@@ -19,43 +20,11 @@ import {clipFrameTimes} from "./clip-timing";
  */
 export type ClipLook = "stage" | "handoff";
 
-/** The previs clip is a light grey-box world, like a clay render: pale sky, pale floor, light set. */
-const NEUTRAL_SKY = 0xc9cdd1;
-
-function tiledFloor(): Mesh {
-  const size = 64;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const context = canvas.getContext("2d");
-  if (context) {
-    // A faint checker: the parallax of camera travel stays readable without a game-board floor.
-    context.fillStyle = "#d3d6d9";
-    context.fillRect(0, 0, size, size);
-    context.fillStyle = "#cacdd1";
-    context.fillRect(0, 0, size / 2, size / 2);
-    context.fillRect(size / 2, size / 2, size / 2, size / 2);
-  }
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = SRGBColorSpace;
-  texture.wrapS = RepeatWrapping;
-  texture.wrapT = RepeatWrapping;
-  texture.magFilter = NearestFilter;
-  // One checker square per metre: 300 m floor, 150 repeats of a 2x2 tile.
-  texture.repeat.set(150, 150);
-  const floor = new Mesh(new PlaneGeometry(300, 300), new MeshStandardMaterial({map: texture, roughness: 1, metalness: 0}));
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -0.004;
-  floor.name = "handoff-floor";
-  return floor;
-}
-
+/* The handoff clip is the studio look (LATER-2335) without the camera path: the video model reads the lit grey
+   set and Squarehead, never a glowing line it would copy into the real scene. */
 function prepareHandoffScene(built: BuiltScene, score: StageScore, set: readonly SceneBlock[] | undefined) {
-  const grid = built.scene.getObjectByName("stage-grid");
-  if (grid) grid.visible = false;
-  built.scene.add(tiledFloor());
-  built.scene.fog = new Fog(NEUTRAL_SKY, 40, 160);
-  applySceneSet(built, set, "light");
+  built.studio.cameraPath.visible = false;
+  applySceneSet(built, set, "studio");
   for (const entity of score.entities) {
     const visual = built.entities.get(entity.id);
     if (!visual) continue;
@@ -138,7 +107,8 @@ export function createShotRenderer(score: StageScore, width = 360, options: {loo
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.setSize(width, height, false);
   const handoff = options.look === "handoff";
-  renderer.setClearColor(handoff ? NEUTRAL_SKY : 0x090b0d, 1);
+  enableStudioRenderer(renderer);
+  renderer.setClearColor(STUDIO.room, 1);
   const built = buildStageScene(score);
   if (handoff) prepareHandoffScene(built, score, options.set);
   const camera = new PerspectiveCamera(40, score.aspectRatio, 0.05, 500);

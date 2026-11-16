@@ -4,13 +4,17 @@
  * it to Make it real (or points at Models when that flow is not set up here).
  */
 import {useState} from "react";
-import {ArrowRight} from "lucide-react";
+import {ArrowRight, Sparkles} from "lucide-react";
 import {Button, ClampText, Dialog, Meta, Notice} from "../../ds";
 import type {Shot} from "../score/schema";
 import type {FilmStudioSession} from "../session";
 import {downloadBlob} from "../download";
 import {uploadBlockoutClip} from "./handoff";
-import {renderShotClipFrames} from "./shot-capture";
+import {createShotRenderer, renderShotClipFrames} from "./shot-capture";
+import {useRecreateMedia} from "../../team/recreate";
+
+/** The look pass (LATER-2335): MiniMax H3 Image redraws a shot still as a polished studio previs, layout kept. */
+const STUDIO_LOOK_PROMPT = "Render Picture 1 as a polished studio previs photograph. Keep every block, ramp and cylinder, the positions and poses of the figures, the camera angle and the framing exactly. Smooth matte light-grey set pieces with softly rounded edges on a mid-grey floor, a dark seamless studio cyclorama, one soft overhead softbox light with soft contact shadows and a gentle falloff into darkness. Every figure is the cube-headed character from Picture 2: glossy yellow rounded cube head with the embossed CF letters, black Creative Field hoodie, black shorts, white gloves and glossy black shoes. Photoreal 3D render. No text or labels.";
 import {compileShotDirection} from "../../capabilities/shot-direction";
 import {shotBrief} from "../shot-brief";
 
@@ -20,6 +24,51 @@ export function ShotActionsDialog({session, shot, still, onClose}: {session: Fil
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const camera = shot.camera;
+  const recreateMedia = useRecreateMedia();
+
+  /** Render the shot's middle frame in the studio look and open MiniMax H3 Image edit with it and Squarehead. */
+  const studioLook = async () => {
+    try {
+      setBusy("Rendering the shot still");
+      const shotIndex = session.score.shots.findIndex((entry) => entry.id === shot.id);
+      const set = session.analysisGeometries.find((geometry) => geometry.shotIndex === shotIndex)?.set;
+      const renderer = createShotRenderer(session.score, 1536, {look: "handoff", set});
+      let png: string;
+      try {
+        png = renderer.still(shot.startSec + Math.max(0.02, (shot.endSec - shot.startSec) / 2));
+      } finally {
+        renderer.dispose();
+      }
+      // The page policy blocks fetch() of data: and blob: URLs, so the still is uploaded here and handed on by its
+      // asset address, which the tool takes as a file already in the project.
+      const workspace = session.workspace, project = session.project;
+      if (!workspace || !project) throw new Error("Choose a project before rendering the studio look.");
+      const bytes = Uint8Array.from(atob(png.split(",")[1] ?? ""), (character) => character.charCodeAt(0));
+      const name = `${session.score.id}-shot-${String(shot.shotNumber).padStart(2, "0")}-studio.png`;
+      const form = new FormData();
+      form.append("file", new File([bytes], name, {type: "image/png"}));
+      const uploaded = await fetch(`/api/v1/workspaces/${encodeURIComponent(workspace.id)}/assets?projectId=${encodeURIComponent(project.id)}`, {method: "POST", body: form, credentials: "same-origin"});
+      if (!uploaded.ok) throw new Error(`The shot still could not be saved (${uploaded.status}).`);
+      const asset = (await uploaded.json()) as {id: string};
+      const stillUrl = `/api/v1/workspaces/${encodeURIComponent(workspace.id)}/assets/${encodeURIComponent(asset.id)}/content`;
+      const open = recreateMedia({
+        capabilityId: "minimax-h3-image-edit",
+        inputs: {
+          source_image: {src: stillUrl, name},
+          reference_image: {src: "/examples/tiles/model3d.webp", name: "squarehead.webp"},
+        },
+        controls: {prompt: STUDIO_LOOK_PROMPT, aspect_ratio: "Same as Picture 1", megapixels: 4},
+      });
+      if (!open) throw new Error("MiniMax H3 Image edit is not set up on this computer. Open Models to add it.");
+      setBusy("Opening MiniMax H3 Image");
+      await open();
+      onClose();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The studio look could not be opened.");
+    } finally {
+      setBusy("");
+    }
+  };
 
   const saveStill = () => {
     if (!still) return;
@@ -90,6 +139,7 @@ export function ShotActionsDialog({session, shot, still, onClose}: {session: Fil
           <Button variant="secondary" onClick={onClose} disabled={!!busy}>Cancel</Button>
           <Button variant="secondary" onClick={() => void downloadClip()} disabled={!!busy}>Download MP4</Button>
           <Button variant="secondary" onClick={saveStill} disabled={!!busy || !still}>Save still</Button>
+          <Button variant="secondary" onClick={() => void studioLook()} disabled={!!busy}><Sparkles size={14} />Studio look</Button>
           {session.sendToVideo ? (
             <Button variant="primary" onClick={() => void makeReal()} disabled={!!busy}>
               <ArrowRight size={14} />

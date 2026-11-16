@@ -9,14 +9,12 @@
  */
 import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef} from "react";
 import {
-  AmbientLight,
   BufferGeometry,
   CanvasTexture,
   CapsuleGeometry,
   Color,
   CylinderGeometry,
   BoxGeometry,
-  DirectionalLight,
   DoubleSide,
   Float32BufferAttribute,
   Group,
@@ -45,6 +43,7 @@ import type {SceneBlock} from "../analysis-contract";
 import {sceneBlockMeshes, type SetLook} from "./scene-blocks";
 import {buildMannequin, STRIDE_PER_CYCLE_M, type Mannequin, type WalkState} from "./mannequin";
 import {evaluateFrame} from "../score/evaluate";
+import {applyStudioLook, enableStudioRenderer, roundedBox, STUDIO, studioPropMaterial, studioShadows, type StudioParts} from "./studio-look";
 
 export type ViewMode = "scripted" | "free" | "stage";
 export type LabelMode = "all" | "cam" | "off";
@@ -90,6 +89,8 @@ export type BuiltScene = {
   cameraLabelSlot: Group;
   cameraLabel: Sprite;
   relabelCamera: (text: string) => void;
+  /** The studio room and the floor camera path (hidden in handoff clips). */
+  studio: StudioParts;
   dispose: () => void;
 };
 
@@ -177,8 +178,11 @@ function buildProp(entity: EvaluatedEntity): Group {
         ? new CylinderGeometry(Math.max(0.05, width / 2), Math.max(0.05, depth / 2), Math.max(0.05, height), 24)
         : shape === "capsule"
           ? new CapsuleGeometry(Math.max(0.05, width / 2), Math.max(0.05, height - width), 6, 14)
-          : new BoxGeometry(Math.max(0.05, width), Math.max(0.05, height), Math.max(0.05, depth));
-  const body = new Mesh(geometry, bodyMaterial(entity));
+          : roundedBox(Math.max(0.05, width), Math.max(0.05, height), Math.max(0.05, depth));
+  /* The studio look (LATER-2335): props are opaque matte grey; the label names them. Glass and wireframe keep their own look. */
+  const studio = entity.def.style !== "glass" && entity.def.style !== "wireframe";
+  const body = new Mesh(geometry, studio ? studioPropMaterial() : bodyMaterial(entity));
+  studioShadows(body);
   body.position.y = height / 2;
   body.userData.body = true;
   group.add(body);
@@ -268,22 +272,18 @@ function disposeObject(object: Object3D) {
   object.traverse((node) => {
     const mesh = node as Mesh;
     mesh.geometry?.dispose();
-    const material = mesh.material as MeshStandardMaterial | MeshBasicMaterial | LineBasicMaterial | SpriteMaterial | undefined;
-    if (!material) return;
-    if ((material as SpriteMaterial).map) (material as SpriteMaterial).map?.dispose();
-    material.dispose();
+    // A mesh may carry one material or a list (one per face group, such as a face texture on one side).
+    const materials = [mesh.material].flat() as (MeshStandardMaterial | MeshBasicMaterial | LineBasicMaterial | SpriteMaterial | undefined)[];
+    for (const material of materials) {
+      if (!material) continue;
+      if ((material as SpriteMaterial).map) (material as SpriteMaterial).map?.dispose();
+      material.dispose();
+    }
   });
 }
 
 export function buildStageScene(score: StageScore): BuiltScene {
   const scene = new Scene();
-  scene.add(new AmbientLight(0xffffff, 1.3));
-  const key = new DirectionalLight(0xffffff, 2.2);
-  key.position.set(4, 8, 6);
-  scene.add(key);
-  const fill = new DirectionalLight(0xffffff, 0.7);
-  fill.position.set(-6, 3, -4);
-  scene.add(fill);
   scene.add(buildGrid(score));
   // The analysis set is a render-only overlay: grey boxes of the active shot's measured room.
   const setGroup = new Group();
@@ -327,6 +327,10 @@ export function buildStageScene(score: StageScore): BuiltScene {
       mannequin: character?.mannequin,
     });
   }
+  const studio = applyStudioLook(scene, score, score.entities.flatMap((entity) => {
+    const mannequin = entities.get(entity.id)?.mannequin;
+    return mannequin ? [{mannequin, heightM: entity.height}] : [];
+  }));
   const cameraRig = new Group();
   const body = new Mesh(new BoxGeometry(0.24, 0.18, 0.32), new MeshStandardMaterial({color: 0xfbbf24, roughness: 0.5, metalness: 0.3}));
   cameraRig.add(body);
@@ -363,6 +367,7 @@ export function buildStageScene(score: StageScore): BuiltScene {
       return cameraLabel;
     },
     relabelCamera,
+    studio,
     dispose: () => disposeObject(scene),
   };
 }
@@ -383,9 +388,10 @@ export function applySceneSet(built: BuiltScene, blocks: readonly SceneBlock[] |
     disposeObject(child);
   }
   for (const entry of meshes) {
-    const material = new MeshStandardMaterial({color: entry.shade, roughness: 0.96, metalness: 0});
-    const geometry = entry.shape === "cylinder" ? new CylinderGeometry(entry.size[0] / 2, entry.size[0] / 2, entry.size[1], 32) : new BoxGeometry(entry.size[0], entry.size[1], entry.size[2]);
+    const material = new MeshStandardMaterial({color: look === "studio" ? STUDIO.set : entry.shade, roughness: 0.92, metalness: 0});
+    const geometry = entry.shape === "cylinder" ? new CylinderGeometry(entry.size[0] / 2, entry.size[0] / 2, entry.size[1], 40) : roundedBox(entry.size[0], entry.size[1], entry.size[2]);
     const mesh = new Mesh(geometry, material);
+    studioShadows(mesh);
     mesh.position.set(entry.position[0], entry.position[1], entry.position[2]);
     mesh.rotation.y = entry.rotationY;
     built.setGroup.add(mesh);
@@ -416,6 +422,9 @@ export type SceneFrameOptions = {
  * viewport, the shot thumbnails and the clip recorder so all three render the
  * same staging.
  */
+/** An angle folded into -π..π, so a turn always takes the short way round. */
+const wrapAngle = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
+
 /** Seconds back to the frame a walk speed is measured against. */
 const WALK_PROBE_SEC = 0.1;
 
@@ -450,7 +459,17 @@ export function applyStageFrame(built: BuiltScene, score: StageScore, frame: Sta
     if (!visual) continue;
     visual.group.visible = entity.visible;
     visual.group.position.set(entity.position[0], entity.position[1], entity.position[2]);
-    visual.group.rotation.y = entity.rotation;
+    // Walk and talk: a figure that travels faces where it goes; only its head turns toward what it looks at (up to
+    // about 70°). Standing, the whole body turns to its look target as before.
+    const previous = earlier.get(entity.id);
+    const rigHeight = visual.mannequin?.rig.height ?? 1.7;
+    const walk = visual.mannequin ? walkOf(entity, previous, rigHeight) : {phase: 0, amount: 0};
+    let bodyYaw = entity.rotation;
+    if (visual.mannequin && previous && walk.amount > 0) {
+      const travel = Math.atan2(entity.position[0] - previous.position[0], entity.position[2] - previous.position[2]);
+      bodyYaw = entity.rotation + wrapAngle(travel - entity.rotation) * Math.min(1, walk.amount * 1.5);
+    }
+    visual.group.rotation.y = bodyYaw;
     if (entity.def.kind !== "marker" && visual.body) {
       visual.body.scale.set(
         Math.max(0.05, entity.size.width / Math.max(0.05, entity.def.width)),
@@ -462,7 +481,10 @@ export function applyStageFrame(built: BuiltScene, score: StageScore, frame: Sta
     if (visual.mannequin) {
       // A lower posture cue bends the knees instead of shrinking the body (the hip drop is in rig heights).
       // A figure that travels walks: its legs and arms follow the distance it covers.
-      visual.mannequin.setPose(Math.max(0, entity.def.height - entity.size.height) / visual.mannequin.rig.height, walkOf(entity, earlier.get(entity.id), visual.mannequin.rig.height));
+      const stride = bodyYaw === entity.rotation ? walk : walkOf({...entity, rotation: bodyYaw}, previous, rigHeight);
+      visual.mannequin.setPose(Math.max(0, entity.def.height - entity.size.height) / visual.mannequin.rig.height, stride);
+      const head = visual.mannequin.rig.bones.get("Head");
+      if (head) head.rotation.y = Math.max(-1.2, Math.min(1.2, wrapAngle(entity.rotation - bodyYaw)));
     }
     visual.label.visible = options.labels === "all";
     visual.label.position.y = (entity.def.kind === "character" ? entity.size.height : entity.def.kind === "marker" ? 0.4 : entity.size.height) + 0.3;
@@ -581,6 +603,7 @@ export const StageViewport = forwardRef<StageViewportHandle, Props>(function Sta
     let disposed = false;
     const built = buildStageScene(score);
     const renderer = new WebGLRenderer({canvas: element, antialias: true, alpha: true, preserveDrawingBuffer: true});
+    enableStudioRenderer(renderer);
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     renderer.setClearColor(0x000000, 0);
