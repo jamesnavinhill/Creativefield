@@ -61,7 +61,7 @@ export const LOW_PRIORITY_EXAMPLES:readonly string[] = [
     Midjourney loops, then the early test clips. Available in the Library and media picker. */
 export const LIBRARY_EXAMPLE_VIDEOS = [...FEATURED_VIDEO_EXAMPLES,...SQUAREHEAD_EXAMPLE_VIDEOS,...OPENJUTSU_SHOWCASE.map(item=>item.result),
   ...["reshoot","effects-lab","copy-moves","film-studio","block-shot","swap-thing","new-look","video-studio","ad-studio"].map(name=>`/examples/promo/${name}.mp4`),
-  ...POOL_VIDEOS,...["upscale","edit","picture","character","angles","relight"].map(id=>`/examples/tiles/menu-${id}.mp4`),...Array.from({ length: 8 }, (_, i) => `/reels/mj-0${i}.mp4`),...LOW_PRIORITY_EXAMPLES];
+  ...POOL_VIDEOS,...["upscale","edit","picture","character","angles","relight"].map(id=>`/examples/tiles/menu-${id}.mp4`),"/examples/tiles/block-grey.mp4","/examples/tiles/replace-source.mp4",...Array.from({ length: 8 }, (_, i) => `/reels/mj-0${i}.mp4`),...LOW_PRIORITY_EXAMPLES];
 
 /** These clips illustrate each area; they are not claims that the named workflow made the clip. */
 export function promoReelForCapability(ids?:string|string[]){
@@ -120,22 +120,52 @@ export function cardLoop(...hints:(string|undefined)[]):string|undefined{
   return hit?`/examples/tiles/${hit[1]}.mp4`:undefined;
 }
 
-/** The Creative Field loops made in this app (HyperFlow H3 Flash image to video, 1024×576, 3 s), each with what it
-    was made from, so Recreate opens the tool filled in: locally the same workflow, start picture, prompt and seed;
-    online the cloud Create Video (Seedance) with the same start picture and prompt. Composited clips (cuts, wipes,
-    overlays) are not one run and are left out. */
-export type ExampleRecipe={title:string;still:string;prompt:string;seed:number};
+/** Creative Field examples made in this app, each with the one run behind it, so Recreate opens the tool filled in:
+    locally the same workflow, files, prompt and seed; online the matching cloud tool with the same files and prompt.
+    A tile that shows several runs at once (a wipe, cuts, pins) names the one run it is about. */
+type File={src:string;name:string};
+export type ExampleRecipe={title:string;mode:string;model:string;
+  /** The local workflow, or "trim" for the clip editor (no model; the same locally and online). */
+  capabilityId:string;inputs:Record<string,File>;controls?:Record<string,string|number|boolean>;prompt?:string;
+  cloud?:{hash:string;inputs:Record<string,File>;prompt:string};info:{src:string;label:string;video?:boolean}[];facts?:{label:string;value:string}[]};
 const T="/examples/tiles/";
+const file=(name:string):File=>({src:`${T}${name}`,name});
+/** One HyperFlow H3 Flash image-to-video loop (1024×576, 3 s); online it is Seedance Create Video. */
+const i2v=(title:string,still:string,seed:number,prompt:string):ExampleRecipe=>({title,mode:"Image to video",model:"HyperFlow H3 Flash",capabilityId:"hyperflow-h3-flash-i2v",
+  inputs:{start_image:file(still)},controls:{prompt,width:1024,height:576,length:3,quality:"normal",seed},prompt,
+  cloud:{hash:"#video/create",inputs:{start_image:file(still)},prompt},info:[{src:`${T}${still}`,label:"Start picture"}],facts:[{label:"Size",value:"1024 × 576 · 3 s"},{label:"Seed",value:String(seed)}]});
+const KEYFRAMES="He completes the leap across the gap and lands in a crouch on the far rooftop, smooth continuous motion, city lights below.";
+const BLOCK="Turn the grey untextured blocking shapes into a real place: a sunlit sandstone canyon with real rock, sand, sky and warm light, every block becoming the real object in the same position and size. Keep the character, the camera move and the composition.";
+const REPLACE="Replace the cube-headed character in the video with the young man from the reference picture: his face, yellow CF beanie, black CF hoodie, cargo trousers and sneakers. Keep the samurai pose, the katana, the camera move, the bamboo forest and the light.";
+const UPSCALE="Rebuild this picture as a photorealistic, high-detail image: preserve the exact composition, framing, lighting, colours and identity, but replace blur, mush and compression with clean natural micro-detail, sharp realistic textures and crisp edges. Do not add, remove or move objects.";
 export const EXAMPLE_RECIPES:Record<string,ExampleRecipe>={
-  [`${T}video.mp4`]:{title:"Hoverbike in the neon city",still:`${T}video.webp`,seed:1116,prompt:"The hoverbike speeds forward through the neon city, the camera tracks alongside, rain streaks and light trails rush past. His head and yellow CF beanie stay steady and in focus."},
-  [`${T}effect-clips.mp4`]:{title:"Ember storm on a dune",still:`${T}effect-clips.webp`,seed:1116,prompt:"The storm of glowing embers spirals faster around him, sparks rushing upward, his hoodie flutters, the camera pushes in slowly."},
-  [`${T}ad.mp4`]:{title:"Sneaker splash",still:`${T}ad.webp`,seed:1116,prompt:"Water droplets splash slowly around the sneaker on the pedestal, the camera orbits slowly, rim light glints."},
-  [`${T}talk.mp4`]:{title:"Radio booth",still:`${T}talk.webp`,seed:1116,prompt:"He speaks into the microphone with natural lip movement and small head gestures, warm dust floats in the light."},
-  [`${T}model3d.mp4`]:{title:"Vinyl figure on a turntable",still:`${T}model3d.webp`,seed:1116,prompt:"The vinyl figure turns slowly on the white turntable, a smooth full rotation, soft studio light."},
-  [`${T}filmstudio.mp4`]:{title:"On the grey film set",still:`${T}filmstudio.webp`,seed:1116,prompt:"He snaps the clapperboard shut, the camera on the dolly rolls slowly forward along the track, work lights flicker."},
-  [`${T}menu-picture.mp4`]:{title:"Orbital greenhouse",still:`${T}picture.webp`,seed:1116,prompt:"The character floats slowly in the orbital greenhouse, ferns sway, sunbeams drift, the camera drifts gently."},
-  [`${T}menu-character.mp4`]:{title:"Character select",still:`${T}character.webp`,seed:1116,prompt:"The two characters on the pedestals turn their heads toward the camera, spotlights pulse, light bars glow."},
-  [`${T}menu-angles.mp4`]:{title:"Turnaround orbit",still:`${T}angles.webp`,seed:1116,prompt:"The camera orbits slowly around the character, smooth continuous arc, soft studio light."},
-  [`${T}menu-relight.mp4`]:{title:"Street from day to night",still:`${T}new-look-before.webp`,seed:1117,prompt:"Time-lapse: the sunny street turns from golden afternoon into deep blue night, the sun sets behind the palms, street lamps and shop neon switch on and glow, the character stays still on the skateboard, the camera holds still."},
+  [`${T}video.mp4`]:i2v("Hoverbike in the neon city","video.webp",1116,"The hoverbike speeds forward through the neon city, the camera tracks alongside, rain streaks and light trails rush past. His head and yellow CF beanie stay steady and in focus."),
+  [`${T}effect-clips.mp4`]:i2v("Ember storm on a dune","effect-clips.webp",1116,"The storm of glowing embers spirals faster around him, sparks rushing upward, his hoodie flutters, the camera pushes in slowly."),
+  [`${T}ad.mp4`]:i2v("Sneaker splash","ad.webp",1116,"Water droplets splash slowly around the sneaker on the pedestal, the camera orbits slowly, rim light glints."),
+  [`${T}talk.mp4`]:i2v("Radio booth","talk.webp",1116,"He speaks into the microphone with natural lip movement and small head gestures, warm dust floats in the light."),
+  [`${T}model3d.mp4`]:i2v("Vinyl figure on a turntable","model3d.webp",1116,"The vinyl figure turns slowly on the white turntable, a smooth full rotation, soft studio light."),
+  [`${T}filmstudio.mp4`]:i2v("On the grey film set","filmstudio.webp",1116,"He snaps the clapperboard shut, the camera on the dolly rolls slowly forward along the track, work lights flicker."),
+  [`${T}menu-picture.mp4`]:i2v("Orbital greenhouse","picture.webp",1116,"The character floats slowly in the orbital greenhouse, ferns sway, sunbeams drift, the camera drifts gently."),
+  [`${T}menu-character.mp4`]:i2v("Character select","character.webp",1116,"The two characters on the pedestals turn their heads toward the camera, spotlights pulse, light bars glow."),
+  [`${T}menu-angles.mp4`]:i2v("Turnaround orbit","angles.webp",1116,"The camera orbits slowly around the character, smooth continuous arc, soft studio light."),
+  [`${T}menu-relight.mp4`]:i2v("Street from day to night","new-look-before.webp",1117,"Time-lapse: the sunny street turns from golden afternoon into deep blue night, the sun sets behind the palms, street lamps and shop neon switch on and glow, the character stays still on the skateboard, the camera holds still."),
+  [`${T}keyframes.mp4`]:{title:"Rooftop leap between two keyframes",mode:"Keyframes",model:"HyperFlow H3 Flash",capabilityId:"hyperflow-h3-flash-i2v",
+    inputs:{start_image:file("keyframes.webp"),end_image:file("keyframes-end.webp")},controls:{prompt:KEYFRAMES,width:1024,height:576,length:3,quality:"normal",seed:1116},prompt:KEYFRAMES,
+    cloud:{hash:"#video/keyframes",inputs:{start_image:file("keyframes.webp"),end_image:file("keyframes-end.webp")},prompt:KEYFRAMES},
+    info:[{src:`${T}keyframes.webp`,label:"Keyframe 1"},{src:`${T}keyframes-end.webp`,label:"Keyframe 2"}],facts:[{label:"Size",value:"1024 × 576 · 3 s"}]},
+  [`${T}block.mp4`]:{title:"Grey blockout to a real canyon",mode:"Make it real",model:"HyperFlow H3 Flash",capabilityId:"previs-to-video-hyperflow",
+    inputs:{source_video:file("block-grey.mp4")},controls:{prompt:BLOCK},prompt:BLOCK,
+    cloud:{hash:"#video/transform/restyle",inputs:{source_video:file("block-grey.mp4")},prompt:BLOCK},
+    info:[{src:`${T}block-grey.mp4`,label:"Grey blockout",video:true}]},
+  [`${T}swap-person.mp4`]:{title:"Squarehead recast as the Boy",mode:"Replace character",model:"HyperFlow H3 Flash · OpenJutsu",capabilityId:"openjutsu-h3-swap-hyperflow",
+    inputs:{source_video:file("replace-source.mp4"),character_image:file("boy.webp")},controls:{prompt:REPLACE,seconds:3},prompt:REPLACE,
+    cloud:{hash:"#video/transform/person",inputs:{source_video:file("replace-source.mp4"),reference_image:file("boy.webp")},prompt:REPLACE},
+    info:[{src:`${T}replace-source.mp4`,label:"Source clip",video:true},{src:`${T}boy.webp`,label:"New character"}]},
+  [`${T}menu-upscale.mp4`]:{title:"Pixelated pier made sharp",mode:"Upscale",model:"Fibo 2.0",capabilityId:"fibo2-edit",
+    inputs:{source_image:file("sharpen-before.webp")},controls:{prompt:UPSCALE,megapixels:4,steps:4,sampler:"euler_ancestral",improve_prompt:false,seed:79},prompt:UPSCALE,
+    cloud:{hash:"#image/upscale",inputs:{source_image:file("sharpen-before.webp")},prompt:""},
+    info:[{src:`${T}sharpen-before.webp`,label:"Low-resolution picture"}]},
+  [`${T}menu-edit.mp4`]:{title:"Short film in the clip editor",mode:"Edit video",model:"Trim and crop",capabilityId:"trim",
+    inputs:{source_video:file("film.mp4")},info:[{src:`${T}film.mp4`,label:"Clip",video:true}]},
 };
 export const RECIPE_VIDEOS=Object.keys(EXAMPLE_RECIPES);

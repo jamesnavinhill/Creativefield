@@ -793,6 +793,11 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
       if(target&&port)setup={capabilityId:target.id,inputs:{[port]:{src:example.src,name:example.name}}};
     }else setup=request;
     const target=setup&&catalogue.find(m=>m.id===setup.capabilityId);
+    /* The clip editor is no workflow: the clip goes into the project and the editor opens on it, here and online. */
+    if(setup?.capabilityId==="trim"&&canCreate&&project){
+      const clip=Object.values(setup.inputs)[0];
+      return clip?async()=>{location.hash=`#video/trim/${await mediaAssetId(clip)}`;}:undefined;
+    }
     /* Online, local workflows are listed but cannot run: an example with a cloud recipe opens the cloud tool with the
        same files and prompt instead. */
     if(hosted&&canCreate&&project&&setup?.cloud){
