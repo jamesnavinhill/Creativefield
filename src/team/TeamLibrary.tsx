@@ -1,7 +1,7 @@
 import type {ReactNode} from "react";
 import {Fragment,lazy,Suspense,useEffect,useState} from "react";
 import {Boxes,Download,Eye,Image as ImageIcon,Palette,Pencil} from "lucide-react";
-import {ASSET_TYPE_DRAG,FrameStrip,Block,LazyVideo,MosaicGrid,MosaicTile,ResultTile,mosaicAccent,Button,ClampText,ConfirmDialog,ContactSheet,Dialog,IconButton,MediaViewer,MediaViewerInfo,Notice,EmptyState,HistoryItem,LinkButton,MediaCard,Meta,PerformanceMirror,ResultGrid,SectionHeader,SegmentedTabs,StatusText,Toolbar,UploadSlot,UploadTile,densityColumnsClass,useDensity,type ContactSheetItem} from "../ds";
+import {ASSET_TYPE_DRAG,DayRail,dayAnchor,FrameStrip,Block,LazyVideo,MosaicGrid,MosaicTile,ResultTile,mosaicAccent,Button,ClampText,ConfirmDialog,ContactSheet,Dialog,IconButton,MediaViewer,MediaViewerInfo,Notice,EmptyState,HistoryItem,LinkButton,MediaCard,Meta,PerformanceMirror,ResultGrid,SectionHeader,SegmentedTabs,StatusText,Toolbar,UploadSlot,UploadTile,densityColumnsClass,useDensity,type ContactSheetItem} from "../ds";
 
 import {assetUrl,workspacePath,type Asset,type AssetPage,type Call,type Project,type Run,type User,type Worker,type Workspace} from "./api";
 import type {LibraryScreen} from "./navigation";
@@ -212,9 +212,10 @@ function ProjectRuns({workspace,project,call,canEdit,authorized,version,user,tit
       :<MosaicTile key={item.asset!.id} accent={mosaicAccent(index)} aspect={feed!.kind==="image"?1:16/9} shape={assetShape(item.asset!)}><ResultTile caption={assetTag(item.asset!)} onRecreate={canEdit?withRun(producerRunId(item.asset!,runs),recreateById):undefined} onDelete={removeAsset?.(item.asset!.id)} viewerCompare={compareUrl(assetCard(item.asset!))} dragAsset={{id:item.asset!.id,url:assetUrl(workspace.id,item.asset!.id),contentType:item.asset!.content_type}}>{feed!.kind==="image"?<img loading="lazy" draggable={false} src={assetUrl(workspace.id,item.asset!.id)} alt={item.asset!.name}/>:<LazyVideo controls={false} autoPlay={false} draggable={false} src={assetUrl(workspace.id,item.asset!.id)} label={item.asset!.name}/>}</ResultTile></MosaicTile>;
   const feedDays=groupByDay(feedItems,item=>item.at);
   const feedView=feed&&(feedItems.length||examples?<>
-    {feedDays.map((day,dayIndex)=>{const offset=feedDays.slice(0,dayIndex).reduce((sum,d)=>sum+d.items.length,0);return <MosaicGrid key={day.label} label={`${day.label}: ${feed.kind==="video"?"All videos in this project":"All images in this project"}`} maxColumns={feed.kind==="image"?3:undefined} head={{start:day.label,end:dayIndex===0?feed.current?.length?<SegmentedTabs quiet label="Show" value={onlyCurrent?"app":"all"} onChange={value=>setOnlyCurrent(value==="app")} items={[{id:"all",label:"All"},{id:"app",label:"This app"}]}/>:undefined:undefined}}>
+    <DayRail days={feedDays.map(day=>day.label)}/>
+    {feedDays.map((day,dayIndex)=>{const offset=feedDays.slice(0,dayIndex).reduce((sum,d)=>sum+d.items.length,0);return <div key={day.label} id={dayAnchor(day.label)}><MosaicGrid label={`${day.label}: ${feed.kind==="video"?"All videos in this project":"All images in this project"}`} maxColumns={feed.kind==="image"?3:undefined} head={{start:day.label,end:dayIndex===0?feed.current?.length?<SegmentedTabs quiet label="Show" value={onlyCurrent?"app":"all"} onChange={value=>setOnlyCurrent(value==="app")} items={[{id:"all",label:"All"},{id:"app",label:"This app"}]}/>:undefined:undefined}}>
       {day.items.map((item,index)=>feedTile(item,offset+index))}
-    </MosaicGrid>;})}
+    </MosaicGrid></div>;})}
     {examples&&<MosaicGrid label="Examples" maxColumns={feed.kind==="image"?3:undefined} head={feedItems.length?{start:"Examples"}:undefined}><ExampleTiles inMosaic kind={examples} videoSources={examples==="video"?LIBRARY_EXAMPLE_VIDEOS:undefined}/></MosaicGrid>}
   </>:<Meta>{feed.kind==="video"?"No videos yet. Every video you make in any video app appears here.":"No images yet. Every image you make in any image app appears here."}</Meta>);
 
@@ -234,11 +235,15 @@ function ProjectRuns({workspace,project,call,canEdit,authorized,version,user,tit
 }
 
 export function TeamLibrary({screen,workspace,project,call,canEdit,authorized,version,user,titles,videoEditReady,onEditVideo}:{screen:LibraryScreen;workspace:Workspace;project:Project;call:Call;canEdit:boolean;authorized:boolean;version:number;user:User;titles?:RunTitles;videoEditReady:boolean;onEditVideo:(asset:Asset)=>void}){
+  /* This project, or every project of the workspace; uploads always go to the open project. */
+  const [scope,setScope]=useState<"project"|"all">(()=>{try{return localStorage.getItem("creativefield.library-scope")==="all"?"all":"project";}catch{return "project";}});
+  const chooseScope=(next:"project"|"all")=>{setScope(next);try{localStorage.setItem("creativefield.library-scope",next);}catch{/* this visit only */}};
+  const scopeQuery=scope==="all"?"":`projectId=${project.id}&`;
   const [density]=useDensity();
   const [unavailable,setUnavailable]=useState<Set<string>>(()=>new Set()),[showUnavailable,setShowUnavailable]=useState(false),[previewRetry,setPreviewRetry]=useState(0);
   useEffect(()=>{setUnavailable(new Set());setShowUnavailable(false);},[workspace.id,project.id]);
   const [assets,setAssets]=useState<Asset[]>([]),[cursor,setCursor]=useState<string|null>(null),[error,setError]=useState(""),[pending,setPending]=useState<{file:File;src:string;kind:"image"|"video"|"audio";state:"uploading"|"failed"}|null>(null),[busy,setBusy]=useState(false),[update,setUpdate]=useState(0),[viewing,setViewing]=useState<Asset|null>(null),[deleting,setDeleting]=useState<Pick<Asset,"id"|"name">|null>(null),[deletingId,setDeletingId]=useState(""),[deleteError,setDeleteError]=useState(""),[pendingDeletion,setPendingDeletion]=useState<Pick<Asset,"id"|"name">|null>(null);
-  useEffect(()=>{if(!authorized)return;let current=true;void call<AssetPage>(workspacePath(workspace.id,`assets?projectId=${project.id}`)).then(page=>{if(current){setAssets(page.items);setCursor(page.nextCursor);setPendingDeletion(page.pendingDeletion??null);setError("");}}).catch(e=>{if(current)setError((e as Error).message);});return()=>{current=false;};},[workspace.id,project.id,call,authorized,version,update]);
+  useEffect(()=>{if(!authorized)return;let current=true;void call<AssetPage>(workspacePath(workspace.id,`assets?${scopeQuery}`)).then(page=>{if(current){setAssets(page.items);setCursor(page.nextCursor);setPendingDeletion(page.pendingDeletion??null);setError("");}}).catch(e=>{if(current)setError((e as Error).message);});return()=>{current=false;};},[workspace.id,project.id,call,authorized,version,update,scopeQuery]);
   /* Which run made each file, so a generated file offers Recreate like its run does. */
   const [madeBy,setMadeBy]=useState<Run[]>([]),recreateById=useRecreateById(call,workspace.id,setError);
   useEffect(()=>{if(!authorized)return;let current=true;void call<Run[]>(workspacePath(workspace.id,`runs?projectId=${project.id}`)).then(list=>{if(current)setMadeBy(list.filter(run=>run.state==="succeeded"));}).catch(()=>{});return()=>{current=false;};},[workspace.id,project.id,call,authorized,version,update]);
@@ -253,7 +258,7 @@ export function TeamLibrary({screen,workspace,project,call,canEdit,authorized,ve
   function pick(file:File|null){if(!file)return;setError("");setPending({file,src:URL.createObjectURL(file),kind:kindOf(file),state:"uploading"});void send(file);}
   function retry(){if(!pending)return;setError("");setPending({...pending,state:"uploading"});void send(pending.file);}
   function dismiss(){setPending(old=>{if(old)URL.revokeObjectURL(old.src);return null;});}
-  async function more(){if(!cursor)return;setBusy(true);try{const page=await call<AssetPage>(workspacePath(workspace.id,`assets?projectId=${project.id}&cursor=${encodeURIComponent(cursor)}`));setAssets(old=>[...old,...page.items]);setCursor(page.nextCursor);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  async function more(){if(!cursor)return;setBusy(true);try{const page=await call<AssetPage>(workspacePath(workspace.id,`assets?${scopeQuery}cursor=${encodeURIComponent(cursor)}`));setAssets(old=>[...old,...page.items]);setCursor(page.nextCursor);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   async function removeAsset(){if(!deleting||!canEdit)return;setDeletingId(deleting.id);setDeleteError("");try{await call(workspacePath(workspace.id,`assets/${encodeURIComponent(deleting.id)}`),"DELETE");setAssets(old=>old.filter(asset=>asset.id!==deleting.id));if(viewing?.id===deleting.id)setViewing(null);setDeleting(null);setPendingDeletion(null);setUpdate(v=>v+1);}catch(e){setDeleteError((e as Error).message);}finally{setDeletingId("");}}
   /* A finish output is reachable through its result card and the comparison; the file grid shows the source, not both. */
   const visibleAssets=newestMediaFirst(assets).filter(asset=>isEndResultAsset(asset)&&!generationOf(asset)?.upscale&&(showUnavailable||!unavailable.has(asset.id)));
@@ -268,19 +273,19 @@ export function TeamLibrary({screen,workspace,project,call,canEdit,authorized,ve
           <LinkButton variant="secondary" aria-label={`Download ${asset.name}`} href={assetUrl(workspace.id,asset.id,true)}><Download size={14}/></LinkButton>
         </>} onRemove={canEdit&&deletingId!==asset.id?()=>{setDeleteError("");setDeleting(asset);}:undefined} removeLabel={`Delete ${asset.name}`}/>;
 };
-  return <><Block label="Project library">{canEdit&&pendingDeletion&&!deleting&&<Notice priority={25} title="Finish removing a file" actions={<Button onClick={()=>{setDeleteError("");setDeleting(pendingDeletion);}}>Finish removal</Button>}>Its stored copy still needs cleanup. Retry to complete the removal.</Notice>}{error&&<Notice priority={20} consequence title="Assets couldn't be read" actions={<Button variant="secondary" disabled={busy} onClick={()=>setUpdate(v=>v+1)}>Check again</Button>} details={error}>The library shows the last list it read; nothing was deleted. Checking again reads the project's files once more.</Notice>}<SectionHeader large title="Library"/>{screen.tab==="runs"?<TeamRuns {...{workspace,project,call,canEdit,authorized,version,user,titles}} linkedRunId={screen.linkedRunId}/>:<>
+  return <><Block label="Project library">{canEdit&&pendingDeletion&&!deleting&&<Notice priority={25} title="Finish removing a file" actions={<Button onClick={()=>{setDeleteError("");setDeleting(pendingDeletion);}}>Finish removal</Button>}>Its stored copy still needs cleanup. Retry to complete the removal.</Notice>}{error&&<Notice priority={20} consequence title="Assets couldn't be read" actions={<Button variant="secondary" disabled={busy} onClick={()=>setUpdate(v=>v+1)}>Check again</Button>} details={error}>The library shows the last list it read; nothing was deleted. Checking again reads the project's files once more.</Notice>}<SectionHeader large title="Library" end={<SegmentedTabs quiet label="Show" value={scope} onChange={value=>chooseScope(value==="all"?"all":"project")} items={[{id:"project",label:"This project"},{id:"all",label:"All projects"}]}/>}/>{screen.tab==="runs"?<TeamRuns {...{workspace,project,call,canEdit,authorized,version,user,titles}} linkedRunId={screen.linkedRunId}/>:<>
     
     {!!unavailable.size&&<Notice title="Some previews aren't available" actions={<><Button variant="secondary" onClick={()=>{setUnavailable(new Set());setShowUnavailable(false);setPreviewRetry(value=>value+1);}}>Try again</Button><Button variant="ghost" onClick={()=>setShowUnavailable(value=>!value)}>{showUnavailable?"Hide unavailable":"Show unavailable"}</Button></>}>The files haven't been deleted.</Notice>}
     {!assets.length&&!pending?(canEdit?null:<EmptyState stage icon={<ImageIcon size={18}/>} title="No shared media yet" text="Nothing has been shared with this project."/>)
-    :groupByDay(visibleAssets,asset=>asset.created_at).concat(visibleAssets.length?[]:[{label:"",items:[]}]).map((day,dayIndex)=><Fragment key={day.label||"new"}>
-      {day.label&&<SectionHeader title={day.label}/>}
+    :<><DayRail days={groupByDay(visibleAssets,asset=>asset.created_at).map(day=>day.label)}/>{groupByDay(visibleAssets,asset=>asset.created_at).concat(visibleAssets.length?[]:[{label:"",items:[]}]).map((day,dayIndex)=><Fragment key={day.label||"new"}>
+      {day.label&&<div id={dayAnchor(day.label)}><SectionHeader title={day.label}/></div>}
       <div className={`ds-grid cf-library-grid ${densityColumnsClass(density,assets.length+(pending?1:0)+(canEdit?1:0))}`}>
       {dayIndex===0&&<>
       {canEdit&&<UploadSlot tile label="Add media" hint="Image, video or audio" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,audio/wav,audio/mpeg" kinds={["image","video","audio"]} disabled={pending?.state==="uploading"} onFile={pick}/>}
       {pending&&<UploadTile src={pending.src} kind={pending.kind} state={pending.state} onRetry={retry} onDismiss={dismiss}/>}
       </>}
       {day.items.map(libraryCard)}
-    </div></Fragment>)}
+    </div></Fragment>)}</>}
     {cursor&&<Button variant="secondary" disabled={busy} onClick={()=>void more()}>Load more</Button>}
     {/* An empty library starts with Add media as the first tile of the examples, never as a box above them. */}
     <ExampleTiles kind="video" videoSources={LIBRARY_EXAMPLE_VIDEOS} leading={!assets.length&&!pending&&canEdit?<UploadSlot tile label="Add media" hint="Image, video or audio" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,audio/wav,audio/mpeg" kinds={["image","video","audio"]} onFile={pick}/>:undefined} leadingCount={!assets.length&&!pending&&canEdit?1:0}/>

@@ -11,6 +11,8 @@
 .ds-topbar__sheets { display: contents; }
 
 @media (max-width: 760px) {
+  /* Day rail (rule 76): no room for it on a phone. */
+  .ds-dayrail { display: none; }
   :root {
     --ui-scale: 1;                                   /* touch targets at full size */
     --pad-page-x: 16px;

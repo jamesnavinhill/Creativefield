@@ -2206,9 +2206,10 @@ button.ds-castcard__main { cursor: pointer; }
 .ds-pose-overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; fill:none; stroke:var(--accent); stroke-width:1.5; opacity:.9; }
 .ds-pose-overlay line { vector-effect:non-scaling-stroke; }
 
-/* A grid of mixed shapes (aspect 0) is a masonry: every picture or clip keeps its own shape, tall ones stay tall. */
-.ds-resultgrid[data-masonry] { display: block; columns: var(--cols, var(--density-cols, 4)); column-gap: var(--gap-section); }
-.ds-resultgrid[data-masonry] > * { break-inside: avoid; margin-bottom: var(--gap-section); }
+/* A grid of mixed shapes (aspect 0) is a masonry: every picture or clip keeps its own shape, tall ones stay tall.
+   useMasonry places the tiles in feed order into the highest column (1px rows), so the feed reads left to right. */
+.ds-resultgrid[data-masonry] { grid-auto-rows: 1px; row-gap: 0; }
+.ds-resultgrid[data-masonry] > * { align-self: start; min-width: 0; }
 .ds-resultgrid[data-masonry] .ds-media { aspect-ratio: auto; min-height: 0; max-height: none; height: auto; }
 .ds-resultgrid[data-masonry] .ds-media > video, .ds-resultgrid[data-masonry] .ds-media > img { width: 100%; height: auto; max-height: none; }
 /* A tile whose shape is known keeps it before the picture arrives: the mosaic never reflows under the eye. */
@@ -2424,3 +2425,10 @@ button.ds-castcard__main { cursor: pointer; }
 .ds-hero--spotlight.ds-hero--compact .ds-hero__copy { gap: var(--space-1); max-width: none; min-width: 0; }
 .ds-hero--spotlight.ds-hero--compact .ds-hero__title { font-size: clamp(1.5rem, 2.6vw, 2.4rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .ds-hero--spotlight.ds-hero--compact .ds-hero__text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+/* Day rail (rule 76): a thin column of day names at the right edge; L3 type, the day in view at full white. */
+.ds-dayrail { position: fixed; right: var(--space-3); top: 50%; transform: translateY(-50%); z-index: 20; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); pointer-events: none; }
+.ds-dayrail__day { pointer-events: auto; border: 0; background: transparent; padding: 2px var(--space-1); font: inherit; font-size: var(--text-2xs); line-height: var(--lh-2xs); color: var(--text-meta); cursor: pointer; border-radius: var(--radius-full); transition: color var(--dur-fast) var(--ease); }
+.ds-dayrail__day:hover { color: var(--text-secondary); }
+.ds-dayrail__day[aria-current] { color: var(--text-primary); }
+[id^="day-"] { scroll-margin-top: 80px; }

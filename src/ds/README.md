@@ -132,6 +132,8 @@ Live reference: run `npm run dev` and open `http://localhost:5173/#ds`.
 
 75. **Before/after tiles.** A tool whose result is a change of a picture may show it as `PresetCard before`: the after picture is clipped by an accent line that sweeps slowly on its own and follows the pointer on hover, with quiet "Before" / "After" chips in the bottom corners. Both pictures are real: the after was made from the before by the tool, or for a video tool by its image counterpart on the same model. With reduced motion the line rests in the middle. The tile stays one button; the line is decoration, not a control.
 
+76. **Jump to a day.** A feed in day sections (Today, Yesterday, weekday, date) may show one `DayRail`: the day names as a thin L3 column at the right edge, the day in view at full white, a click scrolls there. Only with two days or more, hidden on narrow screens. Each day section carries `id={dayAnchor(label)}`; nothing else is added (no counts, no icons).
+
 ## Guard (enforced by `npm test`)
 `test/ds-guard.test.ts` fails when feature CSS (`src/team`, `src/ui`) sets color, font, background, border, radius, shadow, opacity or pixel spacing; when feature code uses `style={}`, raw `<details>`, or a raw `<h1-3>` without a `ds-` class; when more than one `ContextBar` is used in `src/team`; when a native file input, raw `<textarea>`, button-styled `<a>` or custom card is used instead of the DS component; when a design-system component is missing from the showcase; or when navigation/tab definitions contain dead disabled entries. Fix the screen by using or adding a DS component, never by loosening the test.
 

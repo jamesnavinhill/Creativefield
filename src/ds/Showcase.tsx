@@ -73,6 +73,7 @@ import {
   HistoryItem,
   ModelCard,
   FrameStrip,
+  DayRail,
   Hero,
   ModelOption,
   Node,
@@ -1028,6 +1029,9 @@ export default function Showcase() {
         <Hero title="Turn one video into many" text="Take the motion and recast it with your characters, places and products." media={<video src="/reels/wan22-i2v-5b.mp4" muted loop autoPlay playsInline aria-hidden />} />
       </Section>
 
+      <Section title="Day rail (rule 76)">
+        <div style={{position: "relative", height: 120}}><DayRail days={["Today", "Yesterday", "Saturday", "9 November"]} /></div>
+      </Section>
       <Section title="Hero spotlight (All tools)">
         <Hero spotlight accent="make?" title="What do you want to make?" text="The loop stands sharp on the right and melts into the page." media={<RotatingVideo srcs={["/reels/mj-02.mp4"]} />}><SearchField label="Search tools" value="" onChange={() => {}} placeholder="Describe it…" /></Hero>
       </Section>

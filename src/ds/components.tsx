@@ -4,6 +4,7 @@ import { isTopmostModal,useModalFocus } from "./useModalFocus";
 import { adjacentMedia,MediaSequence,MediaSequenceContext,type MediaDirection } from "./MediaSequence";
 import {useDragDismiss,useSwipeClose} from "./gestures";
 import {linkMediaPlayback} from "./linked-playback";
+import {useMasonry} from "./masonry";
 import {VIEWER_FIT,panViewer,wheelZoomFactor,zoomViewer,type ViewerTransform} from "./viewer-zoom";
 import "./media-input-paste.css";
 import {
@@ -2304,9 +2305,10 @@ export function FxIcon({ size = 16 }: { size?: number }) {
 /* ResultGrid follows the shared Items per row setting and uses the actual item count when a batch is smaller. */
 export function ResultGrid({ count, aspect, label, children }: { count: number; /** width / height; 0 = use each image's own shape */ aspect: number; label: string; children: ReactNode }) {
   const [density] = useDensity();
-  const columns = densityColumns(density, count);
+  const columns = densityColumns(density, count), grid = useRef<HTMLDivElement>(null);
+  useMasonry(grid, columns, { gap: true, enabled: aspect <= 0 });
   return (
-    <div className="ds-resultgrid" role="list" aria-label={label} data-count={count} data-masonry={aspect > 0 ? undefined : ""} style={{ ["--cols" as string]: columns, ["--tile-aspect" as string]: aspect > 0 ? aspect : "auto" }}>
+    <div ref={grid} className="ds-resultgrid" role="list" aria-label={label} data-count={count} data-masonry={aspect > 0 ? undefined : ""} style={{ ["--cols" as string]: columns, ["--tile-aspect" as string]: aspect > 0 ? aspect : "auto" }}>
       <MediaSequence>{children}</MediaSequence>
     </div>
   );
@@ -4733,5 +4735,36 @@ export function FrameStrip({ label, items }: { label: string; items: Array<{ src
         ))}
       </div>
     </figure>
+  );
+}
+
+/** Quick jump to a day (rule 76): the day names of a dated feed as a thin column at the right edge. The day in view
+    is bright, the others quiet; a click scrolls to that day. Shown only when there are two days or more. Each day
+    section carries `id={dayAnchor(label)}`. */
+export const dayAnchor = (label: string) => `day-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+export function DayRail({ days }: { days: string[] }) {
+  const [current, setCurrent] = useState(days[0]);
+  /* A clicked day stays marked while the page scrolls there, even when the feed ends before it reaches the top. */
+  const picked = useRef(0);
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const seen = new Map<string, number>();
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) seen.set(entry.target.id, entry.isIntersecting ? entry.boundingClientRect.top : Infinity);
+      const top = [...seen.entries()].filter(([, y]) => y !== Infinity).sort((a, b) => a[1] - b[1])[0];
+      const day = top && days.find((label) => dayAnchor(label) === top[0]);
+      if (day && Date.now() - picked.current > 1200) setCurrent(day);
+    }, { rootMargin: "-80px 0px -55% 0px" });
+    for (const label of days) { const el = document.getElementById(dayAnchor(label)); if (el) observer.observe(el); }
+    return () => observer.disconnect();
+  }, [days.join("|")]);
+  if (days.length < 2) return null;
+  return (
+    <nav className="ds-dayrail" aria-label="Jump to a day">
+      {days.map((label) => (
+        <button key={label} type="button" className="ds-dayrail__day" aria-current={label === current ? "true" : undefined}
+          onClick={() => { picked.current = Date.now(); setCurrent(label); document.getElementById(dayAnchor(label))?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>{label}</button>
+      ))}
+    </nav>
   );
 }
