@@ -80,7 +80,6 @@
 | **Change a picture** | **Camera angles** | **Relight** | **Sharper and bigger** |
 | ![Change a picture](docs/screens/creativefield/functions/edit.webp) | ![Camera angles](docs/screens/creativefield/functions/angles.webp) | ![Relight](docs/screens/creativefield/functions/relight.webp) | ![Sharper and bigger](docs/screens/creativefield/functions/upscale.webp) |
 
-These loops are the previews the menus play; they show what kind of change a function makes, not a measured result of one workflow.
 
 Made for the [#OpenSourceHiggsfield](https://comfy.org/open-source-higgsfield/) challenge.
 
@@ -110,7 +109,7 @@ CreativeField picks one model per job instead of offering a long list. On your c
 | **Fibo 2.0** | Edits images: multi-picture edits, masked edits, Ad Studio and Remix variations |
 | **Qwen Image 2.1** | The first choice for AI edits in FotoField; also creates images, turns objects to new angles, and is the fallback for FLUX 3 Klein |
 
-Online, on Comfy Router: FLUX 2 Pro (pictures, angles, relight), Seedance 2.5 and MiniMax H3 (video, keyframes, effects), Kling V3 Omni (new look, swaps, copied moves), Kling Lip Sync, FLUX video upscale, Bria upscale and background removal.
+Online, on Comfy Router: FLUX Pro (pictures, angles, relight), Seedance 2.5 and MiniMax H3 (video, keyframes, effects), Kling V3 Omni (new look, swaps, copied moves), Kling Lip Sync, FLUX video upscale, Bria upscale and background removal.
 
 If the first choice for a job is not installed on your computer, the app takes the next one that is ready and says so. Workflow folders named `flux2-klein-*` keep their old names but run FLUX 3 Klein weights.
 
@@ -120,7 +119,7 @@ A few jobs stay with specialised models: SAM 3.1 for masks, SeedVR2 and Z-Image 
 
 **FotoField**, our image editor, has layers, masks, selections, smart objects, blend modes, crop, transform and brushes, and its AI tools (modify, magic eraser, subject select) run through ComfyUI on your machine. No subscription and no account; nothing leaves your computer unless you choose a cloud route. The rest of CreativeField puts the same idea around video, image and 3D: each tool is a real ComfyUI workflow behind a plain panel, and you can open the graph when you want it.
 
-It is an early preview, not a Photoshop clone. FotoField covers the everyday layered-editing and AI-editing path; it does not yet match Photoshop's depth (see [Current limits](#current-limits)).
+It is an early preview. FotoField covers the everyday layered-editing and AI-editing path; it does not yet match Photoshop's depth (see [Current limits](#current-limits)).
 
 ## Status
 
@@ -173,8 +172,6 @@ It is an early preview, not a Photoshop clone. FotoField covers the everyday lay
 | Start | Create Video | Image menu |
 |---|---|---|
 | ![Phone start screen](docs/screens/creativefield/phone-start.png) | ![Phone Create Video](docs/screens/creativefield/phone-video.png) | ![Phone menu sheet](docs/screens/creativefield/phone-menu.png) |
-
-These screenshots show the application in a demo project. They show the interface, not a claim about output quality; the Nodes view shows a sample image graph.
 
 ### Camera moves are measured, not assumed
 
