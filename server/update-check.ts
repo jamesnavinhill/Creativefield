@@ -8,7 +8,8 @@ import {join} from "node:path";
 import {promisify} from "node:util";
 import type {FastifyInstance,FastifyRequest} from "fastify";
 import {guestsOnly} from "./cloud-keys";
-import {HttpError} from "./auth";
+import type {Pool} from "pg";
+import {HttpError,principal} from "./auth";
 
 const run=promisify(execFile);
 const REPO="rhymeas/Creativefield";
@@ -64,10 +65,13 @@ const LOCAL=new Set(["127.0.0.1","::1","::ffff:127.0.0.1"]);
 const local=(request:FastifyRequest)=>LOCAL.has(request.ip);
 
 let updating=false;
-export async function updateRoutes(app:FastifyInstance){
+/** POST needs a signed-in user, the local single-user app (never a team or hosted server, even behind a proxy) and a
+    loopback socket; it runs only the three fixed commands below. */
+export async function updateRoutes(app:FastifyInstance,pool:Pool,localSingleUser:boolean){
   app.get("/api/v1/app-update",async()=>guestsOnly()?{current:currentVersion(),available:false,canSelfUpdate:false}:check());
   app.post("/api/v1/app-update",async request=>{
-    if(guestsOnly()||!local(request))throw new HttpError(403,"Updates run only in the app on your own computer.");
+    await principal(pool,request);
+    if(guestsOnly()||!localSingleUser||!local(request))throw new HttpError(403,"Updates run only in the app on your own computer.");
     const info=await check(true);
     if(!info.available)return {state:"current",current:info.current};
     if(!info.canSelfUpdate)throw new HttpError(409,info.reason??"This copy cannot update itself.");

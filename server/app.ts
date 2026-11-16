@@ -406,7 +406,7 @@ export async function buildServer(config: ServerConfig, pool: Pool, dependencies
   const storyboards=await storyboardExecutionRoutes(app,pool,store,catalogue,registry);
   await storyboardPlanRoutes(app,pool);
   await videoPromptRoutes(app,pool,store);
-  await updateRoutes(app);
+  await updateRoutes(app,pool,!!config.localSingleUser);
   await runEstimateRoutes(app,pool);
   await referencePlanRoutes(app,pool);
   await referenceDescribeRoutes(app,pool,store);
