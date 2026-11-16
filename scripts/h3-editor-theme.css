@@ -99,3 +99,66 @@ h2, h3, .bin-name, .head-title { color: var(--text); font-weight: 600; }
 .tl-scroll { background: var(--cf-well); }
 .tl-body, .tl-head, .lane { border-color: var(--cf-line-soft); }
 .lane.drop { background: var(--raised); }
+
+/*
+ * FotoField values (, measured from FotoField at 1600 px, --ui-scale 0.9): the same type sizes, boxes,
+ * pill buttons and glowing primary as the photo editor, so the two editors read as one product.
+ *   type      body 12.6 px, buttons/labels/facts 10.8 px, titles 12.6 px 600
+ *   boxes     #1c1e20 (FotoField dock), radius 19.8 px, hairline rgba(255,255,255,.07)
+ *   buttons   pill, rgba(255,255,255,.05), #898a8b text, 32 px; hover #232528 and white text
+ *   primary   #171b21, 1 px rgba(47,168,255,.55) ring and the accent glow, white 600
+ *   fields    #0b0c0d well, rgba(255,255,255,.10) hairline, radius 19.8 px (prompt) / 12.6 px (one line)
+ */
+:root {
+  --cf-box: #1c1e20;           /* FotoField .ds-dock */
+  --cf-box-radius: 19.8px;     /* --radius-2xl at 0.9 */
+  --cf-subtle: rgba(255, 255, 255, 0.05); /* --surface-subtle */
+  --cf-primary-bg: #171b21;    /* --button-primary-bg */
+  --cf-primary-bg-hover: #1b2028;
+  --cf-ring: rgba(47, 168, 255, 0.55);   /* --accent-ring */
+  --cf-glow: 0 0 0 1px rgba(47, 168, 255, 0.45), 0 0 14px rgba(47, 168, 255, 0.35), 0 0 32px rgba(47, 168, 255, 0.18);
+  --cf-glow-strong: 0 0 0 1px rgba(47, 168, 255, 0.8), 0 0 18px rgba(47, 168, 255, 0.55), 0 0 44px rgba(47, 168, 255, 0.3);
+  --raised: #1c1e20;
+  --radius: 12.6px;           /* --radius-lg at 0.9; buttons set their own pill radius below */
+}
+html, body { font-size: 12.6px; }
+.bin, .inspector, .timeline { background: var(--cf-box); border-radius: var(--cf-box-radius); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
+.insp-tabs, .inspector-foot, .tl-heads, .ruler { background: var(--cf-box); }
+
+/* Buttons: quiet pills, the one primary glows. */
+button.quiet, .bar button:not(.primary), .menu-button, .note-button, .new-clip {
+  background: var(--cf-subtle);
+  color: var(--muted);
+  border: 0;
+  border-radius: 999px;
+  min-height: 32px;
+  padding: 0 12.6px;
+  font-size: 10.8px;
+  font-weight: 400;
+  box-shadow: none;
+}
+button.quiet:hover, .bar button:not(.primary):hover, .menu-button:hover, .note-button:hover, .new-clip:hover { background: #232528; color: var(--text); }
+button.primary {
+  background: var(--cf-primary-bg);
+  color: var(--text);
+  border: 1px solid var(--cf-ring);
+  border-radius: 999px;
+  min-height: 32px;
+  padding: 0 12.6px;
+  font-size: 10.8px;
+  font-weight: 600;
+  box-shadow: var(--cf-glow);
+}
+button.primary:hover { background: var(--cf-primary-bg-hover); border-color: #2fa8ff; box-shadow: var(--cf-glow-strong); }
+
+/* The preview well is as round as FotoField's canvas box. */
+.screen { border-radius: var(--cf-box-radius); }
+
+/* Fields: the dark well with a hairline; a prompt is as round as FotoField's. */
+.field textarea, .note-box textarea { border-radius: var(--cf-box-radius); font-size: 12.6px; }
+.field input, .choice select, .upscale-row select, .own-size > input { border-radius: 12.6px; font-size: 11.7px; min-height: 32px; }
+
+/* Type levels at FotoField's sizes. */
+h2, h3, .bin-name, .head-title { font-size: 12.6px; font-weight: 600; }
+.clip .title { font-size: 11.7px; }
+.field > span, .tl-head, .label-action, .clip .meta, .hint, .count, .insp-count { font-size: 10.8px; }
