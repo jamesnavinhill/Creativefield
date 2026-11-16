@@ -793,8 +793,9 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
       if(target&&port)setup={capabilityId:target.id,inputs:{[port]:{src:example.src,name:example.name}}};
     }else setup=request;
     const target=setup&&catalogue.find(m=>m.id===setup.capabilityId);
-    /* Online the local workflow is missing: the example opens the cloud tool with the same files and prompt. */
-    if(!target&&hosted&&canCreate&&project&&setup?.cloud){
+    /* Online, local workflows are listed but cannot run: an example with a cloud recipe opens the cloud tool with the
+       same files and prompt instead. */
+    if(hosted&&canCreate&&project&&setup?.cloud){
       const cloud=setup.cloud;
       return async()=>{
         const inputs:Record<string,string>={};
