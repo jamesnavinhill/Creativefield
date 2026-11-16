@@ -1,5 +1,5 @@
 import type {ReactNode} from "react";
-import {lazy,Suspense,useEffect,useState} from "react";
+import {Fragment,lazy,Suspense,useEffect,useState} from "react";
 import {Boxes,Download,Eye,Image as ImageIcon,Palette,Pencil} from "lucide-react";
 import {ASSET_TYPE_DRAG,FrameStrip,Block,LazyVideo,MosaicGrid,MosaicTile,ResultTile,mosaicAccent,Button,ClampText,ConfirmDialog,ContactSheet,Dialog,IconButton,MediaViewer,MediaViewerInfo,Notice,EmptyState,HistoryItem,LinkButton,MediaCard,Meta,PerformanceMirror,ResultGrid,SectionHeader,SegmentedTabs,StatusText,Toolbar,UploadSlot,UploadTile,densityColumnsClass,useDensity,type ContactSheetItem} from "../ds";
 
@@ -11,6 +11,7 @@ import { RunDevelop } from "./RunDevelop";
 import {isOutOfMemory} from "../capabilities/memory-rescue";
 import {runFacts} from "./run-facts";
 import {runShape} from "./run-shape";
+import {groupByDay} from "./day-groups";
 const VoiceRunReview=lazy(()=>import("./audio/VoiceRunReview").then(module=>({default:module.VoiceRunReview})));
 const SpeechAudioPlayer=lazy(()=>import("./audio/SpeechAudioPlayer").then(module=>({default:module.SpeechAudioPlayer})));
 import {activeRun,runLabel} from "./state";
@@ -203,12 +204,19 @@ function ProjectRuns({workspace,project,call,canEdit,authorized,version,user,tit
   const feedItems=[...visibleFeedRuns.map(run=>({at:run.created_at,run,film:undefined,asset:undefined})),...feedFilms.map(film=>({at:film.createdAt,run:undefined,film,asset:undefined})),...feedLibrary.map(asset=>({at:asset.created_at,run:undefined,film:undefined,asset}))].sort((a,b)=>b.at.localeCompare(a.at));
   /* Uploads, references and films go like results do: the server deletes the file, or hides it when a run still needs it. */
   const removeAsset=canEdit?(id:string)=>async()=>{try{await call(workspacePath(workspace.id,`assets/${encodeURIComponent(id)}`),"DELETE");setFeedAssets(old=>old.filter(asset=>asset.id!==id));setUpdate(v=>v+1);}catch(e){setError((e as Error).message);}}:undefined;
-  const feedView=feed&&(feedItems.length?<MosaicGrid label={feed.kind==="video"?"All videos in this project":"All images in this project"} maxColumns={feed.kind==="image"?3:undefined} head={{start:feed.kind==="video"?"All videos in this project":"All images in this project",end:feed.current?.length?<SegmentedTabs quiet label="Show" value={onlyCurrent?"app":"all"} onChange={value=>setOnlyCurrent(value==="app")} items={[{id:"all",label:"All"},{id:"app",label:"This app"}]}/>:undefined}}>
-    {feedItems.map((item,index)=>item.run
-      ?<MosaicTile key={item.run.id} id={`cf-run-${item.run.id}`} accent={mosaicAccent(index)} aspect={feed.kind==="image"?1:16/9} current={!!feed.current?.includes(item.run.capability_id)}>{runItem(item.run,true,compareUrl(runCard(item.run)))}</MosaicTile>
+  /* Examples continue the project feed in the same grid, so one own clip never sits alone in a block above them. */
+  /* One block per day, newest first; the All / This app filter stays on the first day's header, examples follow. */
+  const feedTile=(item:typeof feedItems[number],index:number)=>item.run
+      ?<MosaicTile key={item.run.id} id={`cf-run-${item.run.id}`} accent={mosaicAccent(index)} aspect={feed!.kind==="image"?1:16/9} current={!!feed!.current?.includes(item.run.capability_id)}>{runItem(item.run,true,compareUrl(runCard(item.run)))}</MosaicTile>
       :item.film?<MosaicTile key={item.film.id} accent={mosaicAccent(index)}><ResultTile caption={item.film.board} onDelete={removeAsset?.(item.film.assetId!)} deleteTitle="Delete this film?" dragAsset={{id:item.film.assetId!,url:assetUrl(workspace.id,item.film.assetId!),contentType:"video/mp4"}}><video aria-label={`Film ${item.film.board}`} controls preload="metadata" draggable={false} src={assetUrl(workspace.id,item.film.assetId!)}/></ResultTile></MosaicTile>
-      :<MosaicTile key={item.asset!.id} accent={mosaicAccent(index)} aspect={feed.kind==="image"?1:16/9} shape={assetShape(item.asset!)}><ResultTile caption={assetTag(item.asset!)} onRecreate={canEdit?withRun(producerRunId(item.asset!,runs),recreateById):undefined} onDelete={removeAsset?.(item.asset!.id)} viewerCompare={compareUrl(assetCard(item.asset!))} dragAsset={{id:item.asset!.id,url:assetUrl(workspace.id,item.asset!.id),contentType:item.asset!.content_type}}>{feed.kind==="image"?<img loading="lazy" draggable={false} src={assetUrl(workspace.id,item.asset!.id)} alt={item.asset!.name}/>:<LazyVideo controls={false} autoPlay={false} draggable={false} src={assetUrl(workspace.id,item.asset!.id)} label={item.asset!.name}/>}</ResultTile></MosaicTile>)}
-  </MosaicGrid>:!examples?<Meta>{feed.kind==="video"?"No videos yet. Every video you make in any video app appears here.":"No images yet. Every image you make in any image app appears here."}</Meta>:null);
+      :<MosaicTile key={item.asset!.id} accent={mosaicAccent(index)} aspect={feed!.kind==="image"?1:16/9} shape={assetShape(item.asset!)}><ResultTile caption={assetTag(item.asset!)} onRecreate={canEdit?withRun(producerRunId(item.asset!,runs),recreateById):undefined} onDelete={removeAsset?.(item.asset!.id)} viewerCompare={compareUrl(assetCard(item.asset!))} dragAsset={{id:item.asset!.id,url:assetUrl(workspace.id,item.asset!.id),contentType:item.asset!.content_type}}>{feed!.kind==="image"?<img loading="lazy" draggable={false} src={assetUrl(workspace.id,item.asset!.id)} alt={item.asset!.name}/>:<LazyVideo controls={false} autoPlay={false} draggable={false} src={assetUrl(workspace.id,item.asset!.id)} label={item.asset!.name}/>}</ResultTile></MosaicTile>;
+  const feedDays=groupByDay(feedItems,item=>item.at);
+  const feedView=feed&&(feedItems.length||examples?<>
+    {feedDays.map((day,dayIndex)=>{const offset=feedDays.slice(0,dayIndex).reduce((sum,d)=>sum+d.items.length,0);return <MosaicGrid key={day.label} label={`${day.label}: ${feed.kind==="video"?"All videos in this project":"All images in this project"}`} maxColumns={feed.kind==="image"?3:undefined} head={{start:day.label,end:dayIndex===0?feed.current?.length?<SegmentedTabs quiet label="Show" value={onlyCurrent?"app":"all"} onChange={value=>setOnlyCurrent(value==="app")} items={[{id:"all",label:"All"},{id:"app",label:"This app"}]}/>:undefined:undefined}}>
+      {day.items.map((item,index)=>feedTile(item,offset+index))}
+    </MosaicGrid>;})}
+    {examples&&<MosaicGrid label="Examples" maxColumns={feed.kind==="image"?3:undefined} head={feedItems.length?{start:"Examples"}:undefined}><ExampleTiles inMosaic kind={examples} videoSources={examples==="video"?LIBRARY_EXAMPLE_VIDEOS:undefined}/></MosaicGrid>}
+  </>:<Meta>{feed.kind==="video"?"No videos yet. Every video you make in any video app appears here.":"No images yet. Every image you make in any image app appears here."}</Meta>);
 
   return <Block label="Project runs">{hero?.(latestClip?assetUrl(workspace.id,latestClip.output_ids[0]):undefined)}{error&&<Notice priority={20} consequence title="Runs couldn't be updated" actions={<Button variant="secondary" onClick={()=>setUpdate(v=>v+1)}>Check again</Button>} details={error}>The list shows the last runs it read; nothing was cancelled. Checking again reads them once more.</Notice>}
     {rescueOffer&&rescueRun&&<Notice priority={30} title="The graphics card ran out of memory" details={rescueRun.error??undefined}
@@ -217,7 +225,7 @@ function ProjectRuns({workspace,project,call,canEdit,authorized,version,user,tit
     {motionRun&&<PerformanceMirror driving={assetUrl(workspace.id,motionRun.invocation!.inputs.motion_video)} result={assetUrl(workspace.id,motionRun.output_ids[0])} caption="Latest motion run · driving performance and result side by side"/>}
     {pickedOutputs.length>0&&<Toolbar><Button variant="secondary" onClick={()=>setSheetOpen(true)}>Contact sheet · {pickedOutputs.length}</Button><Button variant="ghost" onClick={()=>{setPicked({});setSheetOpen(false);}}>Clear</Button></Toolbar>}
     {feedAssetError&&<Notice priority={20} consequence title="Library couldn't be updated" details={feedAssetError}>The feed shows the last media it read.</Notice>}
-    {feed?<>{feedView}{examples&&<ExampleTiles kind={examples} videoSources={examples==="video"?LIBRARY_EXAMPLE_VIDEOS:undefined}/>}</>:examples?<ExampleTiles kind={examples} leading={runTiles} leadingCount={shown.length} videoSources={examples==="video"&&promoReelForCapability(capabilityId)?[...new Set([...FEATURED_VIDEO_EXAMPLES,...SQUAREHEAD_EXAMPLE_VIDEOS,promoReelForCapability(capabilityId)!])]:undefined}/>:<ResultGrid count={shown.length} aspect={0} label="Project runs">{runTiles}</ResultGrid>}
+    {feed?feedView:examples?<ExampleTiles kind={examples} leading={runTiles} leadingCount={shown.length} videoSources={examples==="video"&&promoReelForCapability(capabilityId)?[...new Set([...FEATURED_VIDEO_EXAMPLES,...SQUAREHEAD_EXAMPLE_VIDEOS,promoReelForCapability(capabilityId)!])]:undefined}/>:<ResultGrid count={shown.length} aspect={0} label="Project runs">{runTiles}</ResultGrid>}
     <Dialog wide open={authorized&&sheetOpen&&sheetItems.length>0} title="Selected results" onClose={()=>setSheetOpen(false)} footer={<Button variant="secondary" onClick={()=>setSheetOpen(false)}>Close</Button>}>
       <ContactSheet items={sheetItems} title={`Selected results · ${project.name}`} fileName={`selected-results-${project.id.slice(0,8)}.png`}/>
     </Dialog>
@@ -250,14 +258,7 @@ export function TeamLibrary({screen,workspace,project,call,canEdit,authorized,ve
   /* A finish output is reachable through its result card and the comparison; the file grid shows the source, not both. */
   const visibleAssets=newestMediaFirst(assets).filter(asset=>isEndResultAsset(asset)&&!generationOf(asset)?.upscale&&(showUnavailable||!unavailable.has(asset.id)));
   const viewableAssets=visibleAssets.filter(asset=>/^(image|video)\//.test(asset.content_type));
-  return <><Block label="Project library">{canEdit&&pendingDeletion&&!deleting&&<Notice priority={25} title="Finish removing a file" actions={<Button onClick={()=>{setDeleteError("");setDeleting(pendingDeletion);}}>Finish removal</Button>}>Its stored copy still needs cleanup. Retry to complete the removal.</Notice>}{error&&<Notice priority={20} consequence title="Assets couldn't be read" actions={<Button variant="secondary" disabled={busy} onClick={()=>setUpdate(v=>v+1)}>Check again</Button>} details={error}>The library shows the last list it read; nothing was deleted. Checking again reads the project's files once more.</Notice>}<SectionHeader large title="Library"/>{screen.tab==="runs"?<TeamRuns {...{workspace,project,call,canEdit,authorized,version,user,titles}} linkedRunId={screen.linkedRunId}/>:<>
-    
-    {!!unavailable.size&&<Notice title="Some previews aren't available" actions={<><Button variant="secondary" onClick={()=>{setUnavailable(new Set());setShowUnavailable(false);setPreviewRetry(value=>value+1);}}>Try again</Button><Button variant="ghost" onClick={()=>setShowUnavailable(value=>!value)}>{showUnavailable?"Hide unavailable":"Show unavailable"}</Button></>}>The files haven't been deleted.</Notice>}
-    {!assets.length&&!pending?(canEdit?null:<EmptyState stage icon={<ImageIcon size={18}/>} title="No shared media yet" text="Nothing has been shared with this project."/>)
-    :<div className={`ds-grid cf-library-grid ${densityColumnsClass(density,assets.length+(pending?1:0)+(canEdit?1:0))}`}>
-      {canEdit&&<UploadSlot tile label="Add media" hint="Image, video or audio" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,audio/wav,audio/mpeg" kinds={["image","video","audio"]} disabled={pending?.state==="uploading"} onFile={pick}/>}
-      {pending&&<UploadTile src={pending.src} kind={pending.kind} state={pending.state} onRetry={retry} onDismiss={dismiss}/>}
-      {visibleAssets.map(asset=>{
+  const libraryCard=(asset:Asset)=>{
         const image=asset.content_type.startsWith("image/"),video=asset.content_type.startsWith("video/"),model=asset.content_type==="model/gltf-binary",viewable=image||video||model,src=assetUrl(workspace.id,asset.id);
         const onUnavailable=()=>setUnavailable(old=>old.has(asset.id)?old:new Set([...old,asset.id]));
         return <MediaCard quiet tag={fileTag(asset)} dragAsset={{id:asset.id,url:src,contentType:asset.content_type}} key={asset.id} onRecreate={canEdit&&(image||video)?withRun(producerRunId(asset,madeBy),recreateById):undefined} media={image?<MediaPreview key={`${src}:${previewRetry}`} src={src} kind="image" lazy onUnavailable={onUnavailable}/>:video?<MediaPreview key={`${src}:${previewRetry}`} src={`${src}#t=0.1`} kind="video" alt={asset.name} onUnavailable={onUnavailable}/>:model?<Suspense fallback={<Meta>Loading model</Meta>}><ModelPreview url={src} standalone/></Suspense>:<audio controls preload="metadata" src={src}/>} viewLabel={`View ${asset.name}`} onView={viewable?()=>{if(model)location.hash=`3d/viewer/${asset.id}`;else setViewing(asset);}:undefined} info={<><span>{asset.name}</span><Meta parts={[asset.content_type,asset.media_type==="mask"?"Validated mask":asset.parent_id&&"New version"]}/></>} actions={<>
@@ -266,8 +267,20 @@ export function TeamLibrary({screen,workspace,project,call,canEdit,authorized,ve
           {video&&canEdit&&videoEditReady&&<IconButton label={`Edit ${asset.name}`} onClick={()=>onEditVideo(asset)}><Pencil size={14}/></IconButton>}
           <LinkButton variant="secondary" aria-label={`Download ${asset.name}`} href={assetUrl(workspace.id,asset.id,true)}><Download size={14}/></LinkButton>
         </>} onRemove={canEdit&&deletingId!==asset.id?()=>{setDeleteError("");setDeleting(asset);}:undefined} removeLabel={`Delete ${asset.name}`}/>;
-      })}
-    </div>}
+};
+  return <><Block label="Project library">{canEdit&&pendingDeletion&&!deleting&&<Notice priority={25} title="Finish removing a file" actions={<Button onClick={()=>{setDeleteError("");setDeleting(pendingDeletion);}}>Finish removal</Button>}>Its stored copy still needs cleanup. Retry to complete the removal.</Notice>}{error&&<Notice priority={20} consequence title="Assets couldn't be read" actions={<Button variant="secondary" disabled={busy} onClick={()=>setUpdate(v=>v+1)}>Check again</Button>} details={error}>The library shows the last list it read; nothing was deleted. Checking again reads the project's files once more.</Notice>}<SectionHeader large title="Library"/>{screen.tab==="runs"?<TeamRuns {...{workspace,project,call,canEdit,authorized,version,user,titles}} linkedRunId={screen.linkedRunId}/>:<>
+    
+    {!!unavailable.size&&<Notice title="Some previews aren't available" actions={<><Button variant="secondary" onClick={()=>{setUnavailable(new Set());setShowUnavailable(false);setPreviewRetry(value=>value+1);}}>Try again</Button><Button variant="ghost" onClick={()=>setShowUnavailable(value=>!value)}>{showUnavailable?"Hide unavailable":"Show unavailable"}</Button></>}>The files haven't been deleted.</Notice>}
+    {!assets.length&&!pending?(canEdit?null:<EmptyState stage icon={<ImageIcon size={18}/>} title="No shared media yet" text="Nothing has been shared with this project."/>)
+    :groupByDay(visibleAssets,asset=>asset.created_at).concat(visibleAssets.length?[]:[{label:"",items:[]}]).map((day,dayIndex)=><Fragment key={day.label||"new"}>
+      {day.label&&<SectionHeader title={day.label}/>}
+      <div className={`ds-grid cf-library-grid ${densityColumnsClass(density,assets.length+(pending?1:0)+(canEdit?1:0))}`}>
+      {dayIndex===0&&<>
+      {canEdit&&<UploadSlot tile label="Add media" hint="Image, video or audio" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,audio/wav,audio/mpeg" kinds={["image","video","audio"]} disabled={pending?.state==="uploading"} onFile={pick}/>}
+      {pending&&<UploadTile src={pending.src} kind={pending.kind} state={pending.state} onRetry={retry} onDismiss={dismiss}/>}
+      </>}
+      {day.items.map(libraryCard)}
+    </div></Fragment>)}
     {cursor&&<Button variant="secondary" disabled={busy} onClick={()=>void more()}>Load more</Button>}
     {/* An empty library starts with Add media as the first tile of the examples, never as a box above them. */}
     <ExampleTiles kind="video" videoSources={LIBRARY_EXAMPLE_VIDEOS} leading={!assets.length&&!pending&&canEdit?<UploadSlot tile label="Add media" hint="Image, video or audio" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,audio/wav,audio/mpeg" kinds={["image","video","audio"]} onFile={pick}/>:undefined} leadingCount={!assets.length&&!pending&&canEdit?1:0}/>
