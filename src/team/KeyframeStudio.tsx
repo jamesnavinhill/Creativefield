@@ -33,10 +33,14 @@ export const draftFrameRate=(draft:Pick<Draft,'modelId'|'fps'>,catalogue:Capabil
 function readDraft(key:string):Draft|null{try{const value=JSON.parse(localStorage.getItem(`${key}:draft`)??'null');return value&&typeof value.modelId==='string'&&Array.isArray(value.frames)&&value.frames.length>=2&&value.frames.length<=4&&value.frames.every((f:Keyframe)=>typeof f.assetId==='string'&&Number.isSafeInteger(f.frame)&&f.frame>=0)&&Array.isArray(value.prompts)&&value.prompts.length===value.frames.length-1&&value.prompts.every((p:unknown)=>typeof p==='string')?value:null;}catch{return null;}}
 
 /** Keyframe editing uses the existing first/last ComfyUI graph and durable storyboard jobs. */
-export function KeyframeStudio({workspace,project,user,catalogue,workers,call,authorized,canEdit,localEnabled,onChanged}:{workspace:Workspace;project:Project;user:User;catalogue:CapabilityManifestV2[];workers:Worker[];call:Call;authorized:boolean;canEdit:boolean;localEnabled:boolean;onChanged:()=>void}){
+export function KeyframeStudio({workspace,project,user,catalogue,workers,call,authorized,canEdit,localEnabled,onChanged,incoming}:{workspace:Workspace;project:Project;user:User;catalogue:CapabilityManifestV2[];workers:Worker[];call:Call;authorized:boolean;canEdit:boolean;localEnabled:boolean;onChanged:()=>void;/** A recreated example: its first and last picture become keyframes 1 and 2, its prompt the transition. */incoming?:{inputs:Record<string,string>;prompt:string}}){
  const models=useMemo(()=>keyframeModels(catalogue),[catalogue]);
  const storageKey=`keyframes:${user.id}:${workspace.id}:${project.id}`;
- const [initialDraft]=useState(()=>readDraft(storageKey));
+ const [initialDraft]=useState(()=>{
+  const saved=readDraft(storageKey);
+  if(!incoming?.inputs.start_image)return saved;
+  return {...saved,modelId:saved?.modelId??'',frames:[{assetId:incoming.inputs.start_image,frame:0},{assetId:incoming.inputs.end_image??'',frame:32}],prompts:[incoming.prompt]};
+ });
  const [modelId,setModelId]=useState(initialDraft?.modelId??''),[frames,setFrames]=useState<Keyframe[]>(initialDraft?.frames??[{assetId:'',frame:0},{assetId:'',frame:32}]),[prompts,setPrompts]=useState<string[]>(initialDraft?.prompts??['']),[assets,setAssets]=useState<Asset[]>([]),[picker,setPicker]=useState<number|null>(null),[busy,setBusy]=useState(''),[error,setError]=useState(''),[board,setBoard]=useState<Board|null>(()=>{try{return JSON.parse(localStorage.getItem(storageKey)??'null');}catch{return null;}}),[pending,setPending]=useState<Pending|null>(()=>{try{return JSON.parse(sessionStorage.getItem(`${storageKey}:pending`)??'null');}catch{return null;}}),[version,setVersion]=useState(0);
  const [creationUncertain,setCreationUncertain]=useState(false),gate=useRef(false);
  const selectionEpoch=useRef<Record<number,number>>({});

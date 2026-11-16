@@ -988,7 +988,7 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
     marketing:renderImage,
     keyframes:inProject(project=>keyframes&&page(<KeyframeStudio {...studioAccess} key={`${workspace.id}:${project.id}`} project={project}
       catalogue={catalogue} workers={runWorkers}
-      localEnabled={keyframes.target==="local"} onChanged={refresh}/>,"fill")),
+      localEnabled={keyframes.target==="local"} onChanged={refresh} incoming={routerIncoming?.workspaceId===workspace.id&&routerIncoming.projectId===project.id?routerIncoming:undefined}/>,"fill")),
     storyboard:inProject(project=>storyboard&&page(<TeamStoryboard key={`${project.id}:${storyboard.boardId??""}`}
       initialBoardId={storyboard.boardId} runTarget={storyboard.target}
       incomingPremise={storyboardIdea?.projectId===project.id&&storyboardIdea.workspaceId===workspace.id?storyboardIdea.text:undefined}
