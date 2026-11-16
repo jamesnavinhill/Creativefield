@@ -1,5 +1,17 @@
 <div align="center">
-  <img src="src/assets/creativefield-logo.png" alt="CreativeField" width="360">
+  <img src="docs/screens/creativefield/header.webp" alt="CreativeField: the Boy and Squarehead, the CreativeField mascots, on a night film set" width="100%">
+
+  <p>
+    <a href="https://www.creativefield.app/"><img alt="Try it online" src="https://img.shields.io/badge/try_it-online-FFD200?style=flat-square&labelColor=0b0b0f"></a>
+    <a href="https://github.com/rhymeas/Creativefield/releases"><img alt="Release" src="https://img.shields.io/github/v/release/rhymeas/Creativefield?style=flat-square&labelColor=0b0b0f&color=2fa8ff"></a>
+    <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-2fa8ff?style=flat-square&labelColor=0b0b0f"></a>
+    <img alt="Runs on ComfyUI" src="https://img.shields.io/badge/runs_on-ComfyUI-2fa8ff?style=flat-square&labelColor=0b0b0f">
+    <img alt="Windows and NVIDIA" src="https://img.shields.io/badge/Windows-NVIDIA_GPU-2fa8ff?style=flat-square&labelColor=0b0b0f">
+    <img alt="Local first" src="https://img.shields.io/badge/local-first-FFD200?style=flat-square&labelColor=0b0b0f">
+    <a href="https://github.com/rhymeas/Creativefield/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/rhymeas/Creativefield?style=flat-square&labelColor=0b0b0f&color=FFD200"></a>
+  </p>
+
+  <b><a href="#install-it-in-five-steps">Install in five steps</a> · <a href="https://www.creativefield.app/">Try it online</a> · <a href="#what-is-new">What is new</a></b>
 
   <a href="https://www.creativefield.app/examples/creativefield-promo-v3.mp4"><img src="docs/screens/creativefield/creativefield-promo-v3.webp" alt="Watch the CreativeField introduction video" width="100%"></a>
 
@@ -169,6 +181,22 @@ These screenshots show the application in a demo project. They show the interfac
 ### Camera moves are measured, not assumed
 
 On MiniMax H3 a camera move is a direction in the prompt, not a fixed path: the model follows it, but not by an exact amount. When a shot needs one exact path, use **Block a shot**: H3 keeps the camera path of the grey layout frame for frame. The `wan22-fun-camera` workflow, which takes a fixed path, also stays in `native-workflows/`. `scripts/camera-check.mjs` measures how far any clip really moved, and `scripts/motion-check.mjs` tells a living clip from a still one. `scripts/seam-check.mjs` says whether a clip loops cleanly or jumps at the loop point, judges a cut inside a clip, and can trim a clip to its best closing window; it is a port of the Seam Doctor in [OpenField](https://github.com/wexloops/openfield) and the seam check in [Body Double](https://github.com/lucataco/open-source-higgsfield).
+
+## Install it in five steps
+
+No experience needed. If you can download a game mod, you can do this.
+
+**What you need:** a Windows computer with an NVIDIA graphics card (the stronger, the faster), plenty of free disk space (one model is often 10 to 30 GB), and internet for the first start.
+
+1. **Get Node.js.** Go to [nodejs.org](https://nodejs.org), press the big **LTS** button, open the file and click **Next** until it says **Finish**. Node.js is the engine that runs CreativeField.
+2. **Get ComfyUI.** Go to the [ComfyUI download page](https://github.com/comfyanonymous/ComfyUI#installing), take the **Windows portable** version, unzip it, and double-click `run_nvidia_gpu.bat` once. When a browser page with boxes and lines opens, ComfyUI works. Leave that black window open.
+3. **Get CreativeField.** On this page, press the green **Code** button at the top, then **Download ZIP**. Right-click the ZIP, choose **Extract All**, and put the folder somewhere easy, like your Desktop.
+4. **Start it.** Open the folder and double-click **`Start CreativeField.bat`**. The first time it installs itself, which takes a few minutes. Then your browser opens CreativeField. Keep the black window open while you work; close it when you are done.
+5. **Make something.** Click **All tools**, pick a tile like **Make a picture**, type what you want to see, and press **Generate**. The first time a tool runs, open **Models** to see which model it needs and download it there.
+
+**Stuck?** Close both black windows and start again from step 4. Still stuck? [Open an issue](https://github.com/rhymeas/Creativefield/issues) and tell us what the black window says.
+
+**No graphics card?** Use the [online version](https://www.creativefield.app/) instead. It runs on your own Comfy account.
 
 ## Run it
 
