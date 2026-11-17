@@ -1416,3 +1416,40 @@ export function fitSetShapes(points: ArrayLike<number>, options: SetShapeOptions
   kept.sort((left, right) => left.zM - right.zM || left.xM - right.xM || left.yM - right.yM);
   return kept.map(({weight: _weight, ...block}) => block);
 }
+
+/**
+ *: set blocks never stand in the camera's view of its subject. Depth noise next to the lens
+ * (a microphone, a shoulder, a door frame) can become a box at eye level a few decimetres ahead, and
+ * the previs then shows one flat grey surface. A block goes when it sits on the lens axis within
+ * `nearM`, or when it crosses the sight line from the camera to a person's body or head.
+ * Stage coordinates: camera at (0, cameraHeightM, 0) looking along +z; y is height above the floor.
+ */
+export function clearCameraView(
+  set: readonly SceneBlock[],
+  options: {cameraHeightM: number; personRoots?: ReadonlyArray<{xM: number; zM: number}>; nearM?: number},
+): SceneBlock[] {
+  const eye: [number, number, number] = [0, options.cameraHeightM, 0];
+  const nearM = options.nearM ?? 1.2;
+  const inside = (block: SceneBlock, point: readonly [number, number, number]) => {
+    const dx = point[0] - block.xM;
+    const dy = point[1] - block.yM;
+    const dz = point[2] - block.zM;
+    if (Math.abs(dy) > Math.abs(block.sizeY) / 2) return false;
+    if (block.shape === "cylinder") return Math.hypot(dx, dz) <= Math.abs(block.sizeX) / 2;
+    const yaw = ((block.yawDeg ?? 0) * Math.PI) / 180;
+    const localX = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+    const localZ = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+    return Math.abs(localX) <= Math.abs(block.sizeX) / 2 && Math.abs(localZ) <= Math.abs(block.sizeZ) / 2;
+  };
+  const crosses = (block: SceneBlock, target: readonly [number, number, number], from: number, to: number) => {
+    for (let t = from; t <= to; t += 0.02) {
+      if (inside(block, [eye[0] + (target[0] - eye[0]) * t, eye[1] + (target[1] - eye[1]) * t, eye[2] + (target[2] - eye[2]) * t])) return true;
+    }
+    return false;
+  };
+  const axisEnd: [number, number, number] = [0, eye[1], nearM];
+  const sightTargets = (options.personRoots ?? [])
+    .filter((root) => Number.isFinite(root.xM) && Number.isFinite(root.zM) && root.zM > 0)
+    .flatMap((root) => [1.0, 1.5].map((heightM) => [root.xM, heightM, root.zM] as [number, number, number]));
+  return set.filter((block) => !crosses(block, axisEnd, 0.25, 1) && !sightTargets.some((target) => crosses(block, target, 0.02, 0.9)));
+}

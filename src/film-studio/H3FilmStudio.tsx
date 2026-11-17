@@ -11,11 +11,14 @@ import {evaluateFrame} from "./score/evaluate";
 import {parseStageScore} from "./score/parse";
 import {synthesizeMeasuredPlan} from "./geometry-synthesis";
 import {planToScoreYaml} from "./score-build";
-import {requestGeometryBatch} from "./analysis-client";
+import {isFrameScanCacheMiss,requestGeometryBatch,scanReferenceFrames} from "./analysis-client";
+import {youtubeId,youtubeSection,type YoutubeSection} from "./session";
+import {analyseYoutubeVideo,captureEmbeddedPlayer,supportsTabCapture,YouTubePlayerClock} from "./youtube-capture";
 import {renderShotClipFrames} from "./stage/shot-capture";
 import {uploadBlockoutClip,uploadProjectAsset} from "./stage/handoff";
 import type {StageScore} from "./score/schema";
 import type {ShotGeometry} from "./analysis-contract";
+import {clearCameraView} from "./geometry";
 import "./film-studio.css";
 
 const LegacyFilmStudio=lazy(async()=>({default:(await import("./FilmStudio")).LegacyFilmStudio}));
@@ -57,15 +60,26 @@ async function renderPrevisFrames(score:StageScore,geometries:readonly ShotGeome
   for(const [index,shot] of score.shots.entries()){
     const left=PREVIS_MAX_FRAMES-frames.length;
     if(left<2)break;
-    const set=geometries.find(geometry=>geometry.shotIndex===index)?.set;
+    const set=viewSet(geometries.find(geometry=>geometry.shotIndex===index));
     const clip=await renderShotClipFrames(score,shot.id,{fps:PREVIS_FPS,width:1280,maxFrames:left,maxDurationSec:Math.max(0.1,shot.endSec-shot.startSec),look:"handoff",set});
     frames.push(...clip.frames);
     onProgress(index+1,score.shots.length);
   }
   return frames;
 }
+/** The shot's set without boxes in the camera's view of its people; also cleans older cached sets. */
+const viewSet=(geometry:ShotGeometry|undefined)=>geometry?.set?clearCameraView(geometry.set,{cameraHeightM:geometry.camera.heightM,personRoots:geometry.persons.flatMap(person=>person.keyframes)}):undefined;
 /** Where the previs flow stands: one value, so a second run cannot start while one works. */
 type PrevisState={step:"idle"}|{step:"rendering";text:string}|{step:"encoding"}|{step:"importing"}|{step:"placed";name:string;assetId:string}|{step:"failed";error:string};
+/** A YouTube part analysed in place ( tab capture, no download): the link and the part to read. */
+type YoutubeRun={videoId:string;section?:YoutubeSection;name:string};
+const clockText=(seconds:number)=>`${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,"0")}`;
+const youtubeRunOf=(link:string):YoutubeRun|null=>{
+  const videoId=youtubeId(link.trim().split(/\s+/)[0]??"");
+  if(!videoId)return null;
+  const section=youtubeSection(link);
+  return {videoId,...(section?{section}:{}),name:`YouTube ${videoId}${section?` ${clockText(section.startSec)}–${clockText(section.endSec)}`:""}`};
+};
 const previsBusy=(state:PrevisState)=>state.step==="rendering"||state.step==="encoding"||state.step==="importing";
 
 /** The measured camera move over the shot in words: stage +x is the camera's left. */
@@ -114,6 +128,10 @@ export function H3FilmStudio({workspace,project,call,canCreate,onOpenShotGenerat
   const [noteSaved,setNoteSaved]=useState(false);
   const [briefDraft,setBriefDraft]=useState("");
   const [previs,setPrevis]=useState<PrevisState>({step:"idle"});
+  const [link,setLink]=useState("");
+  const [youtube,setYoutube]=useState<YoutubeRun|null>(null);
+  const youtubeFrame=useRef<HTMLIFrameElement>(null);
+  const captureVideo=useRef<HTMLVideoElement>(null);
   const retry=useRef<number|undefined>(undefined);
   const name=projectName(project.id);
   const briefs=useMemo<BriefEntry[]|null>(()=>{
@@ -132,11 +150,11 @@ export function H3FilmStudio({workspace,project,call,canCreate,onOpenShotGenerat
     if(!scan||!scan.decisions.length)return null;
     try{
       const windows=scan.shots.map(shot=>({shotIndex:shot.index,startSec:shot.startSec,endSec:shot.endSec}));
-      const synthesized=synthesizeMeasuredPlan({decisions:scan.decisions,geometries:scan.geometries,shots:windows,title:scanClip?.name??"H3 clip",aspectRatio:scan.clip.aspectRatio,cuts:scan.clip.cuts});
+      const synthesized=synthesizeMeasuredPlan({decisions:scan.decisions,geometries:scan.geometries,shots:windows,title:scanClip?.name??youtube?.name??"H3 clip",aspectRatio:scan.clip.aspectRatio,cuts:scan.clip.cuts});
       const built=planToScoreYaml(synthesized.plan,{durationSec:scan.clip.durationSec,aspectRatio:scan.clip.aspectRatio,cuts:scan.clip.cuts});
       return parseStageScore(built.yaml).score??null;
     }catch{return null;}
-  },[scan,scanClip]);
+  },[scan,scanClip,youtube]);
   useEffect(()=>{if(!scanning&&!measuring)setBriefDraft(briefLines.join("\n\n"));},[briefLines,scanning,measuring]);
 
   useEffect(()=>{
@@ -180,36 +198,74 @@ export function H3FilmStudio({workspace,project,call,canCreate,onOpenShotGenerat
   async function openAnalysis(){
     setAnalysisOpen(true);setAnalysisError("");setNoteSaved(false);
     // Each opening starts at the clip list, so another clip can be chosen; work still running stays shown.
-    if(!scanning&&!measuring&&!previsBusy(previs)){setScan(null);setScanClip(null);setPrevis({step:"idle"});}
+    if(!scanning&&!measuring&&!previsBusy(previs)){setScan(null);setScanClip(null);setYoutube(null);setPrevis({step:"idle"});}
     try{await refreshClips();}catch(cause){setAnalysisError((cause as Error).message);}
   }
 
   async function analyse(clip:H3Clip){
     const take=takeOf(clip);
     if(!take)return;
-    setScanning(true);setAnalysisError("");setScan(null);setScanClip(clip);setNoteSaved(false);setPrevis({step:"idle"});setAnalysisStage("Scanning the clip");
+    setScanning(true);setAnalysisError("");setScan(null);setScanClip(clip);setYoutube(null);setNoteSaved(false);setPrevis({step:"idle"});setAnalysisStage("Scanning the clip");
     try{
       const response=await fetch(`/api/v1/workspaces/${encodeURIComponent(workspace.id)}/h3-editor/media?filename=${encodeURIComponent(take.file)}&subfolder=${encodeURIComponent(take.subfolder)}`,{credentials:"same-origin"});
       if(!response.ok)throw new Error("The clip file is not available.");
       const result=await scanReferenceClip(workspace.id,await response.blob(),{filename:take.file});
-      setScan(result);
-      if(result.pending.decisions){
-        setAnalysisStage("Reading the shots");
-        let decisions:ShotDecision[]=[...result.decisions];
-        for(const batch of shotBatches(result.shots.length)){
-          const pending=batch.indices.filter(index=>!decisions.some(decision=>decision.shotIndex===index));
-          const frames:string[]=[];const indices:number[]=[];
-          for(const index of pending){const shotFrames=result.shots[index]?.frames??[];const frame=shotFrames[Math.floor((shotFrames.length-1)/2)];if(frame){frames.push(frame);indices.push(index);}}
-          const vision=await decideShotsWithVision(workspace.id,frames,indices);
-          if(!vision)break;
-          const fresh:ShotDecision[]=vision.decisions.map(({index,decision})=>({shotIndex:index,people:decision.people,size:decision.size,motion:decision.motion,needsStaging:Math.max(0,Math.round(decision.needsStaging))}));
-          decisions=[...decisions,...fresh].sort((left,right)=>left.shotIndex-right.shotIndex);
-          setScan(current=>current?{...current,decisions}:current);
-        }
-      }
+      await readShots(result);
     }catch(cause){setAnalysisError((cause as Error).message);}
     finally{setScanning(false);setAnalysisStage("");}
   }
+
+  /** The vision pass over a fresh scan: one decision per shot (people, size, motion), in batches. */
+  async function readShots(result:AnalysisScan){
+    setScan(result);
+    if(result.pending.decisions){
+      setAnalysisStage("Reading the shots");
+      let decisions:ShotDecision[]=[...result.decisions];
+      for(const batch of shotBatches(result.shots.length)){
+        const pending=batch.indices.filter(index=>!decisions.some(decision=>decision.shotIndex===index));
+        const frames:string[]=[];const indices:number[]=[];
+        for(const index of pending){const shotFrames=result.shots[index]?.frames??[];const frame=shotFrames[Math.floor((shotFrames.length-1)/2)];if(frame){frames.push(frame);indices.push(index);}}
+        const vision=await decideShotsWithVision(workspace.id,frames,indices);
+        if(!vision)break;
+        const fresh:ShotDecision[]=vision.decisions.map(({index,decision})=>({shotIndex:index,people:decision.people,size:decision.size,motion:decision.motion,needsStaging:Math.max(0,Math.round(decision.needsStaging))}));
+        decisions=[...decisions,...fresh].sort((left,right)=>left.shotIndex-right.shotIndex);
+        setScan(current=>current?{...current,decisions}:current);
+      }
+    }
+  }
+
+  /** A YouTube part: the embedded player plays only that part while this tab is shared, so cuts and
+   *  keyframes are read without downloading the video (the Classic studio's path). */
+  function analyseYoutube(){
+    const run=youtubeRunOf(link);
+    if(!run)return;
+    setAnalysisError("");setScan(null);setScanClip(null);setNoteSaved(false);setPrevis({step:"idle"});
+    setScanning(true);setAnalysisStage("Opening the video");setYoutube(run);
+  }
+  useEffect(()=>{
+    if(!youtube||!scanning)return;
+    const frame=youtubeFrame.current,video=captureVideo.current;
+    if(!frame||!video)return;
+    const clock=new YouTubePlayerClock(frame);
+    clock.start();
+    const controller=new AbortController();
+    const signal=controller.signal;
+    void analyseYoutubeVideo({
+      videoId:youtube.videoId,...(youtube.section?{section:youtube.section}:{}),explicit:true,signal,iframe:frame,video,clock,fps:8,maxDurationSec:120,
+      playerDuration:()=>clock.durationSec,
+      probe:async request=>{try{return await scanReferenceFrames(workspace.id,request,{signal});}catch(cause){if(isFrameScanCacheMiss(cause))return null;throw cause;}},
+      scanFrames:request=>scanReferenceFrames(workspace.id,request,{signal}),
+      capture:options=>captureEmbeddedPlayer(options),
+      supportsTabCapture:()=>supportsTabCapture(),
+      runScan:async result=>{await readShots(result);},
+      posterDraft:async()=>{},
+      notice:notice=>setAnalysisError(notice.detail.replace(/ ?Showing the poster draft.?/,"")),
+      stage:text=>setAnalysisStage(text),
+      info:()=>{},
+    }).catch(cause=>{if(!signal.aborted)setAnalysisError((cause as Error).message);}).finally(()=>{if(!signal.aborted){setScanning(false);setAnalysisStage("");}});
+    return()=>{controller.abort();clock.stop();};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[youtube?.videoId,youtube?.section?.startSec,youtube?.section?.endSec,scanning&&!!youtube]);
 
   async function measureGeometry(){
     if(!scan)return;
@@ -224,16 +280,16 @@ export function H3FilmStudio({workspace,project,call,canCreate,onOpenShotGenerat
   /** Render the blocking as a grey previs clip and put it in the H3 timeline right after its source,
    *  with the shot brief as a note at its first frame. */
   async function addPrevisClip(){
-    if(!scan||!scanClip||!blockingScore||previsBusy(previs))return;
+    if(!scan||!(scanClip||youtube)||!blockingScore||previsBusy(previs))return;
     setPrevis({step:"rendering",text:"Rendering the stage"});
     try{
       const frames=await renderPrevisFrames(blockingScore,scan.geometries,(done,total)=>setPrevis({step:"rendering",text:`Rendering shot ${done} of ${total}`}));
       if(frames.length<2)throw new Error("The stage gave no frames to render.");
       setPrevis({step:"encoding"});
-      const clipName=`Previs: ${scanClip.name||scanClip.id}`;
+      const clipName=`Previs: ${scanClip?(scanClip.name||scanClip.id):youtube?.name??"clip"}`;
       const asset=await uploadBlockoutClip(workspace.id,project.id,{frames,fps:PREVIS_FPS,name:`${clipName}.mp4`});
       setPrevis({step:"importing"});
-      const placed=await call<{clip?:string}>(workspacePath(workspace.id,`h3-editor/project/${encodeURIComponent(name)}/import`),"POST",{assetId:asset.id,projectId:project.id,name:clipName,afterClip:scanClip.id});
+      const placed=await call<{clip?:string}>(workspacePath(workspace.id,`h3-editor/project/${encodeURIComponent(name)}/import`),"POST",{assetId:asset.id,projectId:project.id,name:clipName,...(scanClip?{afterClip:scanClip.id}:{})});
       const brief=briefText();
       if(placed.clip&&brief)await call(workspacePath(workspace.id,`h3-editor/project/${encodeURIComponent(name)}/notes`),"POST",{clip:placed.clip,frame:0,text:brief});
       setPrevis({step:"placed",name:clipName,assetId:asset.id});
@@ -285,19 +341,19 @@ export function H3FilmStudio({workspace,project,call,canCreate,onOpenShotGenerat
       <Meta>Edit clips on one timeline. Analyze clip measures a clip's camera and adds a grey-block previs of it.</Meta>
       <SourceCredit credit={{name:"H3 Editor by Igor LS",url:"https://github.com/igorls/comfyui-h3-editor",license:"GPL-3.0",what:"The timeline editor"}}/>
     </WorkflowDescription>
-    <Toolbar end={<><Meta>{worker?.name??"Looking for HyperFlow H3 Flash"}</Meta>{clips.length>0&&<Button variant="secondary" onClick={()=>void openAnalysis()}>Analyze clip</Button>}<Button variant="ghost" onClick={()=>setLegacy(true)}>Classic studio</Button>{origin&&<LinkButton variant="secondary" href={`/h3-editor/${workspace.id}/h3take/editor?project=${encodeURIComponent(name)}`}>Open in new tab</LinkButton>}</>}>
+    <Toolbar end={<><Meta>{worker?.name??"Looking for HyperFlow H3 Flash"}</Meta>{origin&&<Button variant="secondary" onClick={()=>void openAnalysis()}>Analyze clip</Button>}<Button variant="ghost" onClick={()=>setLegacy(true)}>Classic studio</Button>{origin&&<LinkButton variant="secondary" href={`/h3-editor/${workspace.id}/h3take/editor?project=${encodeURIComponent(name)}`}>Open in new tab</LinkButton>}</>}>
       <Meta>H3 Editor</Meta>
     </Toolbar>
     {error&&<Notice priority={10} title="The H3 Editor is not reachable" actions={<Button variant="secondary" onClick={()=>{setError("");setLegacy(true);}}>Use classic studio</Button>} details={error}>The editor runs inside the HyperFlow H3 Flash worker. Connect a local worker in Settings and try again.</Notice>}
     {origin
       ?<iframe className="cf-h3studio__frame" title="H3 Editor" src={`/h3-editor/${workspace.id}/h3take/editor?project=${encodeURIComponent(name)}&cf_project=${encodeURIComponent(project.id)}`} allow="clipboard-write; fullscreen"/>
       :!error&&<Meta>Looking for the HyperFlow H3 Flash worker…</Meta>}
-    <Dialog wide={!!scan} open={analysisOpen} title={scan&&scanClip?`Analyze ${scanClip.name||"clip"}`:"Analyze a clip"} onClose={()=>setAnalysisOpen(false)}
-      footer={scan&&!scanning?<>
+    <Dialog wide={!!scan} open={analysisOpen} title={scan&&(scanClip||youtube)?`Analyze ${scanClip?(scanClip.name||"clip"):youtube?.name}`:"Analyze a clip"} onClose={()=>setAnalysisOpen(false)}
+      footer={!scan&&!scanning?(youtubeRunOf(link)?<Button variant="primary" onClick={analyseYoutube}>Analyze</Button>:undefined):scan&&!scanning?<>
         {previsBusy(previs)?<StatusText tone="active">{previs.step==="rendering"?previs.text:previs.step==="encoding"?"Encoding the clip":"Adding it to the timeline"}</StatusText>
-          :previs.step==="placed"?<StatusText tone="ok">{`${previs.name} is in the timeline after its source.`}</StatusText>
+          :previs.step==="placed"?<StatusText tone="ok">{scanClip?`${previs.name} is in the timeline after its source.`:`${previs.name} is in the timeline.`}</StatusText>
           :noteSaved?<StatusText tone="ok">Saved as a note at the clip's first frame.</StatusText>:null}
-        {!noteSaved&&<Button variant="secondary" disabled={measuring||previsBusy(previs)} onClick={()=>void saveNote()}>Save brief as note</Button>}
+        {!noteSaved&&scanClip&&<Button variant="secondary" disabled={measuring||previsBusy(previs)} onClick={()=>void saveNote()}>Save brief as note</Button>}
         {scan&&scan.pending.geometry&&scan.geometries.length===0
           ?<Button variant="primary" disabled={measuring} onClick={()=>void measureGeometry()}>{measuring?"Measuring…":"Measure camera"}</Button>
           :previs.step==="placed"
@@ -312,14 +368,20 @@ export function H3FilmStudio({workspace,project,call,canCreate,onOpenShotGenerat
       {!scan&&!scanning&&<Block label="Choose a clip">
         {clips.length?<ThumbGrid label="Clips">{clips.map(clip=>{const take=takeOf(clip);return <div key={clip.id} className="cf-h3analysis__clip"><Thumb label={clip.name||clip.id} src={take?.poster?`/api/v1/workspaces/${encodeURIComponent(workspace.id)}/h3-editor/media?filename=${encodeURIComponent(take.poster)}&subfolder=${encodeURIComponent(take.subfolder)}`:undefined} info={<>{clip.name||clip.id}{clip.seconds?<><br/>{clip.seconds} s</>:null}</>} onSelect={()=>void analyse(clip)}/><Meta>{clip.name||clip.id}</Meta></div>;})}</ThumbGrid>
           :<Meta>Open a project with a rendered or imported clip in the editor first.</Meta>}
+        {/* Or a part of a YouTube video: the link, then the part ("1:20-1:23"); nothing is downloaded. */}
+        <PromptField label="YouTube link" value={link} onChange={setLink} placeholder="YouTube link, then the part: 1:20-1:23" compact/>
       </Block>}
+      {youtube&&scanning&&<div className="fs-reference__player">
+        <iframe ref={youtubeFrame} title="YouTube video" src={`https://www.youtube.com/embed/${youtube.videoId}?enablejsapi=1&playsinline=1&rel=0&modestbranding=1&iv_load_policy=3${youtube.section?`&start=${Math.floor(youtube.section.startSec)}`:""}&origin=${encodeURIComponent(window.location.origin)}`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"/>
+        <video ref={captureVideo} className="fs-reference__capture" playsInline muted aria-hidden/>
+      </div>}
       {scanning&&<StatusText tone="active">{analysisStage||"Analysing the clip"}</StatusText>}
-      {scan&&scanClip&&!scanning&&<>
+      {scan&&(scanClip||youtube)&&!scanning&&<>
         <Meta parts={[scan.shots.length===1?"1 shot":`${scan.shots.length} shots`,`${scan.clip.durationSec.toFixed(1)} s`,`${scan.clip.width}×${scan.clip.height}`]}/>
         <div className="cf-h3analysis__layout">
           {/* The stage the previs clip is rendered from: what was rebuilt, at a glance. */}
           <div className="cf-h3analysis__stage">
-            {blockingScore?<Suspense fallback={null}><StageViewport score={blockingScore} frame={evaluateFrame(blockingScore,0)} view="stage" labels="off" setBlocks={scan.geometries.find(geometry=>geometry.shotIndex===scan.shots[0]?.index)?.set} onNavigateStart={()=>{}}/></Suspense>
+            {blockingScore?<Suspense fallback={null}><StageViewport score={blockingScore} frame={evaluateFrame(blockingScore,0)} view="stage" labels="off" setBlocks={viewSet(scan.geometries.find(geometry=>geometry.shotIndex===scan.shots[0]?.index))} onNavigateStart={()=>{}}/></Suspense>
               :<EmptyState plain title="No stage yet" text="Measure the camera to rebuild the place and the people."/>}
           </div>
           <div className="cf-h3analysis__facts">

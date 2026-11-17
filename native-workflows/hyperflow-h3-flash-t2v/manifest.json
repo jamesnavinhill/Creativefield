@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "title": "HyperFlow H3 Flash text to video",
   "category": "t2v",
-  "description": "Turn a few words into a video with sound. Describe the scene and movement, then let HyperFlow H3 Flash create your take locally on your computer.",
+  "description": "Create video and sound from a prompt with HyperFlow H3 Flash.",
   "inputs": [],
   "outputs": [
     {

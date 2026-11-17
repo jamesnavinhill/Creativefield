@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import type {ReactNode} from "react";
-import {Block,Button,EmptyState,Hero,RotatingVideo,PresetCard,PresetGrid,SearchField,SectionHeader,Toolbar } from "../ds";
+import {Block,Button,EmptyState,Hero,RotatingVideo,PresetCard,PresetGrid,SearchField,SectionHeader,SegmentedTabs,Toolbar } from "../ds";
 import {Box,Brush,Camera,Clapperboard,Film,Flame,Footprints,ImagePlus,Maximize2,MessageCircle,Palette,RotateCw,Shapes,UserRound,UserRoundPen} from "lucide-react";
 import {POOL_VIDEOS} from "./reels";
 import {LOAD_TURN} from "./reload-turn";
@@ -17,6 +17,8 @@ const ICONS:Record<StartTaskId,ReactNode>={
     A task with its own workflow opens the composer on that workflow through `onOpen`. */
 export function StartScreen({tools,onOpen,hosted=false}:{tools:StartTask[];onOpen?:(task:StartTask)=>void;hosted?:boolean}){
   const [query,setQuery]=useState("");
+  /* The four tools are a quiet filter, not stacked blocks: "All" is one grid without gaps between groups. */
+  const [group,setGroup]=useState<string>("All");
   /* Example pictures are dropped into public/examples and listed in its index.json ({"video": "video.webp"}, or
      {"new-look": {"image": "after.webp", "before": "before.webp"}} for a before/after tile): no code change per picture. */
   const [examples,setExamples]=useState<Record<string,string|{image:string;before?:string}>>({}),[pool,setPool]=useState<string[]>([]);
@@ -29,17 +31,11 @@ export function StartScreen({tools,onOpen,hosted=false}:{tools:StartTask[];onOpe
     </Hero>
     <Toolbar>
       <SectionHeader title="All tools" large/>
+      <SegmentedTabs quiet label="Show tools" value={group} onChange={setGroup} items={["All",...START_GROUPS.filter(g=>shown.some(t=>t.group===g))].map(id=>({id,label:id}))}/>
     </Toolbar>
     {shown.length===0?<EmptyState title="No tool matches." action={<Button variant="ghost" onClick={()=>setQuery("")}>Show all tools</Button>}/>:
-    <div className="cf-start__tools">{START_GROUPS.map(group=>{
-        const tasks=shown.filter(t=>t.group===group);
-        /* One block per tool (Create, Change, Upscale, Film Studio), named so the four tools are visible. */
-        return tasks.length>0?<Block key={group} label={group}>
-          <SectionHeader title={group}/>
-          <PresetGrid label={group}>
-            {tasks.map(t=>{const at=shown.indexOf(t),turn=pool.length?pool.slice((at*3+LOAD_TURN)%pool.length).concat(pool.slice(0,(at*3+LOAD_TURN)%pool.length)):[],entry=examples[t.id],file=typeof entry==="string"?entry:entry?.image,before=typeof entry==="object"&&entry?.before?`/examples/${entry.before}`:undefined,own=file?`/examples/${file}`:t.thumb;return <PresetCard key={t.id} size="tool" featured={t.featured} promo={t.promo} video={t.video} before={before} thumb={own??turn[0]} thumbs={turn} label={t.label} hint={t.text} icon={ICONS[t.id]} onSelect={()=>{if(onOpen)onOpen(t);else location.hash=t.href.slice(1);}}/>;})}
-          </PresetGrid>
-        </Block>:null;
-      })}</div>}
+    <div className="cf-start__tools"><Block label={group}><PresetGrid label={group}>
+      {START_GROUPS.flatMap(g=>shown.filter(t=>t.group===g&&(group==="All"||group===g))).map(t=>{const at=shown.indexOf(t),turn=pool.length?pool.slice((at*3+LOAD_TURN)%pool.length).concat(pool.slice(0,(at*3+LOAD_TURN)%pool.length)):[],entry=examples[t.id],file=typeof entry==="string"?entry:entry?.image,before=typeof entry==="object"&&entry?.before?`/examples/${entry.before}`:undefined,own=file?`/examples/${file}`:t.thumb;return <PresetCard key={t.id} size="tool" featured={t.featured} promo={t.promo} video={t.video} before={before} thumb={own??turn[0]} thumbs={turn} label={t.label} hint={t.text} icon={ICONS[t.id]} onSelect={()=>{if(onOpen)onOpen(t);else location.hash=t.href.slice(1);}}/>;})}
+    </PresetGrid></Block></div>}
   </div>;
 }

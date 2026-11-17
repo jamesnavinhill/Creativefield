@@ -866,7 +866,7 @@
    and stops after four lines instead of stretching the tile (rule 25). */
 .ds-preset--tool { gap: var(--space-2); }
 .ds-preset--tool .ds-preset__label { padding: var(--space-1) var(--space-1) 0; font-family: var(--font-display); font-size: var(--display-xs); line-height: var(--lh-display-xs); font-weight: var(--weight-bold); letter-spacing: var(--tracking-display); }
-.ds-preset--tool .ds-preset__hint { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; padding: 0 var(--space-1) var(--space-1); }
+.ds-preset--tool .ds-preset__hint { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; padding: 0 var(--space-1) var(--space-1); font-size: var(--text-sm); line-height: var(--lh-sm); color: var(--text-secondary); }
 
 /* â”€â”€ Panel sections and picker rows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .ds-psection { display: flex; flex-direction: column; gap: var(--gap-stack); min-width: 0; }

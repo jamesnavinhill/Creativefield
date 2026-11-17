@@ -127,9 +127,17 @@ const youtubeSeconds = (value: string | null): number | null => {
  * without a start is the whole video (undefined); a start without an end is YOUTUBE_SECTION_SEC long.
  */
 export function youtubeSection(input: string): YoutubeSection | undefined {
+  // A typed part after the link ("1:20-1:35", "0:05–0:08", "1:02:10-1:02:20") wins over t=/end=.
+  const range = /(?:^|\s)((?:\d+:)?\d+:\d{2}(?:\.\d+)?)\s*[-–—]\s*((?:\d+:)?\d+:\d{2}(?:\.\d+)?)(?:\s|$)/.exec(input);
+  if (range?.[1] && range[2]) {
+    const clock = (text: string) => text.split(":").reduce((total, part) => total * 60 + Number(part), 0);
+    const start = clock(range[1]);
+    const end = clock(range[2]);
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start) return {startSec: start, endSec: end};
+  }
   let params: URLSearchParams;
   try {
-    params = new URL(input.trim()).searchParams;
+    params = new URL(input.trim().split(/\s+/)[0] ?? "").searchParams;
   } catch {
     return undefined;
   }

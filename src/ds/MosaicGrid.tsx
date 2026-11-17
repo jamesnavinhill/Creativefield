@@ -3,11 +3,14 @@ import './mosaic-grid.css';
 import {useDensity} from './components';
 import {usePhone} from './gestures';
 import {MediaSequence} from './MediaSequence';
+import {MASONRY_ROW,placeTile,useMasonry} from './masonry';
+
+export {placeTile};
 
 /* The shared result feed. Its columns follow the global size slider (useDensity) like every result grid; each
    tile is one column wide and as tall as its media. Tiles go, in feed order, into the column that is shortest so
    far (masonry), so columns grow evenly and no gaps open between tiles. */
-const ROW=1; // px per grid row, so every gap between tiles is exactly the same
+const ROW=MASONRY_ROW;
 
 /** Columns a tile took in the earlier 12-column mosaic; kept for callers, the feed itself now gives every tile one column. */
 export function mosaicSpan(aspect:number,accent:0|1|2,cols:number){
@@ -28,14 +31,6 @@ function nearestFinished(shapes:ReadonlyArray<number|null>,index:number){
  for(let distance=1;distance<shapes.length;distance++){if(shapes[index-distance])return index-distance;if(shapes[index+distance])return index+distance;}
  return undefined;
 }
-/** Where the next tile goes: the columns whose tallest is lowest, starting below that tallest column so a
- *  tile spanning two columns never lies on top of the tile in the taller one. `heights` are column heights in rows. */
-export function placeTile(heights:readonly number[],span:number):{column:number;top:number}{
- const width=Math.min(span,heights.length);let column=0,top=Number.POSITIVE_INFINITY;
- for(let i=0;i+width<=heights.length;i++){const tallest=Math.max(...heights.slice(i,i+width));if(tallest<top){top=tallest;column=i;}}
- return {column,top};
-}
-
 /** Width / height of the picture or clip in a finished tile; null while it loads or while the tile is still working. */
 function tileShape(cell:Element){
  if(cell.querySelector('[data-develop]'))return null;
@@ -58,9 +53,10 @@ export function MosaicGrid({label,head,children,maxColumns,square,justified}:{la
  useEffect(()=>{const el=grid.current;if(!el)return;setNarrow(el.getBoundingClientRect().width<720);if(typeof ResizeObserver==='undefined')return;const observer=new ResizeObserver(([entry])=>{setNarrow(entry.contentRect.width<720);setTileHeight(Math.round(Math.min(380,Math.max(150,entry.contentRect.width/Math.max(1,cols)*0.62))));});observer.observe(el);return()=>observer.disconnect();},[]);
  const phone=usePhone(),width=narrow||phone?Math.min(2,density):density,cols=Math.max(1,Math.min(width,maxColumns??width));
  /* Placement is measured, not declared: each tile's height comes from its media, so the grid places the cells
-    itself whenever a tile changes size or the feed changes, and React never sets a cell's grid position. */
+    itself whenever a tile changes size or the feed changes, and React never sets a cell's grid position.
+    Justified rows size their cells here; the masonry below goes through useMasonry. */
  useEffect(()=>{const el=grid.current;if(!el||typeof ResizeObserver==='undefined')return;
-  if(justified){
+  if(!justified)return;
     /* Media-sized rows: one height for the whole feed, a landscape clip two cells wide. Measured from the
        available width so the row fills left to right and the media keeps its own framing (covered, not letterboxed). */
     const declaredShape=(cell:HTMLElement)=>{const inner=cell.firstElementChild as HTMLElement|null,media=cell.querySelector<HTMLElement>(".ds-media");return parseFloat(inner?.style.getPropertyValue("--mosaic-shape")||"")||parseFloat(media?.style.getPropertyValue("--media-shape")||"")||tileShape(cell);};
@@ -71,30 +67,13 @@ export function MosaicGrid({label,head,children,maxColumns,square,justified}:{la
     const feed=new MutationObserver(layout);feed.observe(el,{childList:true});layout();
     const retry=setTimeout(layout,400);
     return()=>{sizes.disconnect();feed.disconnect();clearTimeout(retry);for(const media of medias){media.removeEventListener("loadedmetadata",layout);media.removeEventListener("load",layout);}};
-  }
-  let frame=0;
-  const layout=()=>{frame=0;const heights=new Array<number>(cols).fill(0),cells=Array.from(el.children) as HTMLElement[],shapes=cells.map(tileShape);
-   /* A working tile takes its neighbour's shape until it knows its own, set before the heights are measured. */
-   cells.forEach((cell,index)=>{if(!cell.querySelector('[data-develop]'))return;const shape=nearestShape(shapes,index);if(shape)cell.style.setProperty('--mosaic-neighbour',String(shape));else cell.style.removeProperty('--mosaic-neighbour');});
-   /* A working tile copies the nearest finished tile's shape and column span, so its preview is exactly that size. */
-   const spans=shapes.map((shape,index)=>{const effective=shape??(nearestFinished(shapes,index)===undefined?null:shapes[nearestFinished(shapes,index)!]);return effective&&effective>=1.15&&cols>=3?2:1;});
-   cells.forEach((cell,index)=>{cell.style.gridRow='';cell.style.gridColumn=`span ${spans[index]}`;});
-   for(const [index,cell] of cells.entries()){
-    const inner=cell.firstElementChild as HTMLElement|null,rows=Math.max(1,Math.ceil(Math.max(inner?.scrollHeight??0,inner?.getBoundingClientRect().height??0)/ROW));
-    /* A landscape clip takes two columns when there is room, so it reads bigger than a portrait tile instead of
-       every tile looking equally small; portrait and square tiles keep one column. */
-    const span=spans[index];
-    let column=0,best=Number.POSITIVE_INFINITY;
-    for(let i=0;i+span<=cols;i++){let tallest=heights[i];for(let offset=1;offset<span;offset++)tallest=Math.max(tallest,heights[i+offset]);if(tallest<best){best=tallest;column=i;}}
-    cell.style.gridColumn=`${column+1} / span ${span}`;cell.style.gridRow=`${best+1} / span ${rows}`;
-    const next=best+rows;for(let i=column;i<column+span;i++)heights[i]=next;
-   }};
-  const schedule=()=>{if(!frame)frame=requestAnimationFrame(layout);};
-  const sizes=new ResizeObserver(schedule);
-  const watch=()=>{sizes.disconnect();for(const cell of Array.from(el.children))if(cell.firstElementChild)sizes.observe(cell.firstElementChild);schedule();};
-  const feed=new MutationObserver(watch);feed.observe(el,{childList:true});watch();
-  return()=>{feed.disconnect();sizes.disconnect();if(frame)cancelAnimationFrame(frame);};
  },[cols,justified]);
+ /* Measured masonry (useMasonry): a working tile first takes its nearest finished neighbour's shape and span,
+    a landscape clip takes two columns when the column count is even and at least four, so it reads bigger than a
+    portrait tile; with 3 or 5 columns a run of two-column clips would leave the last column empty. */
+ useMasonry(grid,cols,{enabled:!justified,
+  prepare:cells=>{const shapes=cells.map(tileShape);cells.forEach((cell,index)=>{if(!cell.querySelector('[data-develop]'))return;const shape=nearestShape(shapes,index);if(shape)cell.style.setProperty('--mosaic-neighbour',String(shape));else cell.style.removeProperty('--mosaic-neighbour');});},
+  span:cells=>{const shapes=cells.map(tileShape);return shapes.map((shape,index)=>{const near=nearestFinished(shapes,index),effective=shape??(near===undefined?null:shapes[near]);return effective&&effective>=1.15&&cols>=4&&cols%2===0?2:1;});}});
  return <section className="ds-mosaic" aria-label={label}>
   {head&&<div className="ds-mosaic__head"><span className="ds-mosaic__title">{head.start}</span>{head.end&&<span className="ds-mosaic__filter">{head.end}</span>}</div>}
   <div ref={grid} className="ds-mosaic__grid" role="list" data-square={square||undefined} data-justified={justified||undefined} style={{['--mosaic-cols' as string]:cols,['--mosaic-row' as string]:`${ROW}px`,['--mosaic-tile-h' as string]:`${tileHeight}px`} as CSSProperties}>

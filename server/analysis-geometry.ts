@@ -67,6 +67,8 @@ import {
   fitFovFromUv,
   floorPlausibility,
   estimatedBackdropBlocks,
+  FLOOR_MAX_HEIGHT_M,
+  FLOOR_MIN_HEIGHT_M,
   measureCamera,
   PERSON_HEIGHT_ANCHOR_M,
   pitchedLevelFloor,
@@ -86,6 +88,7 @@ import {
   type CameraMeasurement,
   type FloorPlane,
   type FovFit,
+  clearCameraView,
 } from "../src/film-studio/geometry";
 import {
   analyzePersons,
@@ -917,6 +920,79 @@ type KeyframeAnchor = {
  * neighbour shot or from person eye level; the root comes from the mask-centre bearing.
  * The result is marked quality "estimated" with the anchor recorded in estimate.
  */
+/** A blurred close-up reads as a head 0.2 m away; a person never stands closer to the lens than this. */
+export const MIN_SUBJECT_DISTANCE_M = 0.8;
+
+type Sighting = {frameIndex: number; timeSec: number; xM: number; zM: number; anchorPx: number};
+
+/**
+ * How many people a shot without a camera path has: the median number seen at once over its
+ * keyframes. Sightings much smaller than the frame's largest (a hand, a far head) do not count.
+ */
+export function steadyPeopleCount(sightings: readonly Sighting[]): number {
+  const counts = [...new Set(sightings.map((sighting) => sighting.frameIndex))].map((frameIndex) => {
+    const inFrame = sightings.filter((sighting) => sighting.frameIndex === frameIndex);
+    const largest = Math.max(...inFrame.map((sighting) => sighting.anchorPx));
+    return inFrame.filter((sighting) => sighting.anchorPx >= 0.35 * largest).length;
+  });
+  counts.sort((left, right) => left - right);
+  return Math.max(1, counts[Math.floor((counts.length - 1) / 2)] ?? 1);
+}
+
+/**
+ * At most `count` tracks: the longest (then closest) stay; a sighting of a dropped track joins the
+ * kept track that has none in that keyframe and lies nearest in bearing, otherwise it goes.
+ */
+export function foldTracks<T extends Sighting>(tracks: readonly T[][], count: number): T[][] {
+  const size = (track: readonly T[]) => Math.max(...track.map((sighting) => sighting.anchorPx));
+  const ranked = [...tracks].sort((left, right) => right.length - left.length || size(right) - size(left));
+  const kept = ranked.slice(0, count).map((track) => [...track]);
+  const bearing = (sighting: Sighting) => Math.atan2(sighting.xM, sighting.zM);
+  for (const sighting of ranked.slice(count).flat().sort((left, right) => right.anchorPx - left.anchorPx)) {
+    let best: T[] | undefined;
+    let bestGap = Number.POSITIVE_INFINITY;
+    for (const track of kept) {
+      if (track.some((other) => other.frameIndex === sighting.frameIndex)) continue;
+      const nearest = [...track].sort((left, right) => Math.abs(left.timeSec - sighting.timeSec) - Math.abs(right.timeSec - sighting.timeSec))[0];
+      const gap = Math.abs(bearing(nearest) - bearing(sighting));
+      if (gap < bestGap) {
+        best = track;
+        bestGap = gap;
+      }
+    }
+    best?.push(sighting);
+  }
+  return kept;
+}
+
+/**
+ * What the MoGe mesh must be multiplied by so that its people stand where their size puts them: placed
+ * distance / mesh depth under the mask, for the largest person of the mesh's own keyframe (the best ruler).
+ */
+async function meshScaleFromPeople(entry: PreparedShot, attempt: Attempt, people: ReadonlyArray<{maskIndex: number; zM: number; anchorPx: number}>): Promise<number> {
+  const mesh = attempt.result?.mesh;
+  if (!mesh?.positions?.length || !mesh.hasUvs) return 1;
+  const inKeyframe = new Set(maskIndicesForStillTime(entry, attempt.candidate.timeSec));
+  for (const person of [...people].sort((left, right) => right.anchorPx - left.anchorPx)) {
+    if (!inKeyframe.has(person.maskIndex)) continue;
+    const bitmap = await maskBitmap(entry.masks![person.maskIndex].bytes).catch(() => undefined);
+    if (!bitmap) continue;
+    const depths: number[] = [];
+    for (let vertex = 0; vertex * 3 + 2 < mesh.positions.length; vertex++) {
+      const u = Math.round(mesh.uvs[vertex * 2] * (bitmap.width - 1));
+      const v = Math.round(mesh.uvs[vertex * 2 + 1] * (bitmap.height - 1));
+      if (u < 0 || v < 0 || u >= bitmap.width || v >= bitmap.height || bitmap.data[v * bitmap.width + u] <= 127) continue;
+      const depth = mesh.positions[vertex * 3 + 2];
+      if (Number.isFinite(depth) && depth > 0.05) depths.push(depth);
+    }
+    if (depths.length < 50) continue;
+    depths.sort((left, right) => left - right);
+    const scale = person.zM / depths[Math.floor(depths.length / 2)];
+    if (Number.isFinite(scale) && scale > 0.05 && scale < 50) return scale;
+  }
+  return 1;
+}
+
 async function buildEstimatedShot(
   entry: PreparedShot,
   params: AnalysisParams,
@@ -965,6 +1041,7 @@ async function buildEstimatedShot(
     anchorPx: number;
     maskHeight: number;
     placeholder: boolean;
+    maskIndex: number;
   };
   const observations: Observation[] = [];
   const anchors: KeyframeAnchor[] = [];
@@ -991,7 +1068,7 @@ async function buildEstimatedShot(
     const fxMask = fov.fxPx * (profile.width / fovAttempt.candidate.width);
     const distanceM = distanceFromAnchorSize(fxMask, anchor.anchorM, anchor.anchorPx);
     if (distanceM === null) continue;
-    const root = rootFromAnchorBearing({fxPx: fxMask, centroidPx: anchor.centroidPx, imageWidth: profile.width, distanceM});
+    const root = rootFromAnchorBearing({fxPx: fxMask, centroidPx: anchor.centroidPx, imageWidth: profile.width, distanceM: Math.max(MIN_SUBJECT_DISTANCE_M, distanceM)});
     if (!root) continue;
     const frameIndex = frames[index];
     const timeSec = frameTime(frameIndex);
@@ -1007,11 +1084,18 @@ async function buildEstimatedShot(
       anchorPx: anchor.anchorPx,
       maskHeight: profile.height,
       placeholder,
+      maskIndex: index,
     });
     anchors.push({basis: anchor.basis, anchorM: anchor.anchorM, anchorPx: anchor.anchorPx, centroidPx: anchor.centroidPx, maskWidth: profile.width, maskHeight: profile.height, timeSec, frameIndex});
   }
   if (!observations.length) {
     return fail(`no usable floor and no person-size anchor on the ${frameTimesSec.length} keyframes (kept blockout; every mask is too small or cut by the top edge); tried ${describeAttempts(entry)}`, []);
+  }
+  // People seen at once, not sightings: a pan must not turn two people into eight.
+  const peopleCount = steadyPeopleCount(observations);
+  for (const frameIndex of new Set(observations.map((observation) => observation.frameIndex))) {
+    const inFrame = observations.filter((observation) => observation.frameIndex === frameIndex).sort((left, right) => right.anchorPx - left.anchorPx);
+    for (const extra of inFrame.slice(peopleCount)) observations.splice(observations.indexOf(extra), 1);
   }
   // Associate every mask observation with a person track: time-aware nearest in the floor frame.
   type TrackState = {observations: Observation[]; lastFrame: number; lastTimeSec: number; lastX: number; lastZ: number};
@@ -1040,7 +1124,9 @@ async function buildEstimatedShot(
       trackStates.push({observations: [observation], lastFrame: observation.frameIndex, lastTimeSec: observation.timeSec, lastX: observation.xM, lastZ: observation.zM});
     }
   }
-  const clusters = trackStates.sort((left, right) => right.observations.length - left.observations.length || left.observations[0].timeSec - right.observations[0].timeSec);
+  const clusters = foldTracks(trackStates.map((state) => state.observations), peopleCount)
+    .sort((left, right) => right.length - left.length || left[0].timeSec - right[0].timeSec)
+    .map((kept) => ({observations: kept}));
   // The closest/largest person anchor defines the camera estimate; every cluster keeps its roots.
   const primary = [...observations].sort((left, right) => right.anchorPx - left.anchorPx || left.timeSec - right.timeSec)[0];
   // A gate-failed plane is only a usable pitch estimate while it is near vertical; a close-up's
@@ -1057,7 +1143,7 @@ async function buildEstimatedShot(
   const pitchDeg = upright ? upright.pitchDeg : planePitchDeg;
   // Camera height: borrow a measured neighbour shot's floor height (index within +-3), else eye level.
   const neighbor = measuredGeometries
-    .filter((geometry) => Math.abs(geometry.shotIndex - entry.shot.index) <= 3)
+    .filter((geometry) => Math.abs(geometry.shotIndex - entry.shot.index) <= 3 && geometry.floor.confidence >= PEOPLE_SCALE_FLOOR_CONFIDENCE)
     .sort((left, right) => Math.abs(left.shotIndex - entry.shot.index) - Math.abs(right.shotIndex - entry.shot.index))[0];
   // A tiny or inconsistent anchor (gallery/UI thumbnails) is only a rough placeholder, not a scene measurement.
   const anchorPxValues = observations.map((observation) => observation.anchorPx);
@@ -1085,8 +1171,12 @@ async function buildEstimatedShot(
   // The set from the MoGe mesh for a camera at the estimated height and pitch; the
   // flat backdrop wall behind the farthest person stays only as the fallback for an empty mesh.
   const meshAttempt = fovAttempt.result?.mesh ? fovAttempt : setAttempt(entry);
+  // Without a floor MoGe's own scale is loose (a whole room can come out 0.5 m deep): the people,
+  // placed from their head or body size, set the scale of the room around them.
+  const meshScale = meshAttempt ? await meshScaleFromPeople(entry, meshAttempt, observations) : 1;
+  baseEvidence.peopleScale = round(meshScale, 3);
   const meshSet = meshAttempt
-    ? await buildPointcloudSet({entry, attempt: meshAttempt, floor: pitchedLevelFloor(cameraHeightM, pitchDeg), persons}).catch(() => ({set: [] as SceneBlock[], setSource: "moge-pointcloud" as const}))
+    ? await buildPointcloudSet({entry, attempt: meshAttempt, floor: pitchedLevelFloor(cameraHeightM, pitchDeg), persons, scale: meshScale, pointsOut: join(diagnosticsDir, "set-points.f32")}).catch(() => ({set: [] as SceneBlock[], setSource: "moge-pointcloud" as const}))
     : {set: [] as SceneBlock[], setSource: "moge-pointcloud" as const};
   const farthestDistanceM = Math.max(...observations.map((observation) => observation.distanceM));
   const set = meshSet.set.length
@@ -1526,6 +1616,8 @@ async function buildPointcloudSet(input: {
   scale?: number;
   /** Set points of the other registered keyframes, already in the anchor frame (a pan reveals more set). */
   extraPoints?: readonly number[][];
+  /** Diagnostics: the set points (x, y, z as float32) the shapes are fitted to. */
+  pointsOut?: string;
 }): Promise<{set: SceneBlock[]; setSource: "moge-pointcloud"}> {
   const empty = {set: [] as SceneBlock[], setSource: "moge-pointcloud" as const};
   const roots = input.persons.flatMap((person) => person.keyframes.map((keyframe) => ({xM: keyframe.xM, zM: keyframe.zM})));
@@ -1538,6 +1630,8 @@ async function buildPointcloudSet(input: {
     }
   }
   if (!stagePoints.length) return empty;
+  if (input.pointsOut) await mkdir(dirname(input.pointsOut), {recursive: true}).catch(() => undefined);
+  if (input.pointsOut) await writeFile(input.pointsOut, Buffer.from(Float32Array.from(stagePoints).buffer)).catch(() => undefined);
   const subjectDistance = roots.length ? Math.min(...roots.map((root) => Math.hypot(root.xM, root.zM))) : undefined;
   // Smooth shapes per connected part: slabs, oriented boxes and upright cylinders.
   const set = fitSetShapes(Float32Array.from(stagePoints), {
@@ -1545,7 +1639,8 @@ async function buildPointcloudSet(input: {
     personClearanceM: 0.4,
     subjectDistanceM: subjectDistance,
   });
-  return {set, setSource: "moge-pointcloud"};
+  //: depth noise at the lens never becomes a box between the camera and its subject.
+  return {set: clearCameraView(set, {cameraHeightM: input.floor.offsetM, personRoots: roots}), setSource: "moge-pointcloud"};
 }
 
 /** The MoGe attempt whose mesh rebuilds the set of a shot without an accepted floor: the first with a mesh and a lens fit. */
@@ -1563,7 +1658,7 @@ function estimatedPitchDeg(entry: PreparedShot): number {
 /** Camera height for a shot without an accepted floor: a measured neighbour's (index +-3), else eye level. */
 function neighbourCameraHeight(entry: PreparedShot, measuredGeometries: ShotGeometry[]): {heightM: number; neighbor?: ShotGeometry} {
   const neighbor = measuredGeometries
-    .filter((geometry) => Math.abs(geometry.shotIndex - entry.shot.index) <= 3)
+    .filter((geometry) => Math.abs(geometry.shotIndex - entry.shot.index) <= 3 && geometry.floor.confidence >= PEOPLE_SCALE_FLOOR_CONFIDENCE)
     .sort((left, right) => Math.abs(left.shotIndex - entry.shot.index) - Math.abs(right.shotIndex - entry.shot.index))[0];
   return neighbor ? {heightM: neighbor.camera.heightM, neighbor} : {heightM: eyeLevelCameraHeightM(PERSON_HEIGHT_ANCHOR_M)};
 }
@@ -1696,6 +1791,14 @@ async function analyzeAcceptedShot(client: ComfyAnalysisClient, entry: PreparedS
   const scale = floor.confidence < PEOPLE_SCALE_FLOOR_CONFIDENCE ? peopleScale(persons.tracks.map((track) => track.rawHeightM)) : 1;
   const scaledFloor = scale === 1 ? floor : {...floor, offsetM: floor.offsetM * scale};
   const scaledCamera = scale === 1 ? cameraMeasurement : {...cameraMeasurement, heightM: cameraMeasurement.heightM * scale};
+  // The people and an untrusted floor must agree on a camera a person could hold: a scale that lifts
+  // the camera out of the floor gate is a wrong floor (a table top, a wall), so the shot is estimated
+  // from its people instead of measured on that plane.
+  if (scale !== 1 && (scaledCamera.heightM < FLOOR_MIN_HEIGHT_M || scaledCamera.heightM > FLOOR_MAX_HEIGHT_M)) {
+    const reason = `the people put the camera ${scaledCamera.heightM.toFixed(2)} m above a floor fitted with ${Math.round(floor.confidence * 100)} % confidence; estimated from the people instead`;
+    baseEvidence.skipReason = reason;
+    return {error: reason, evidence: baseEvidence, runtimeMs};
+  }
   if (scale !== 1) {
     baseEvidence.peopleScale = round(scale, 3);
     persons = {...persons, tracks: persons.tracks.map((track) => ({

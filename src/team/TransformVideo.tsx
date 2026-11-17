@@ -11,6 +11,10 @@ import {backgroundManifest,restylePresentation,seedBackgroundDraft,selectTransfo
 const TOOL_LABELS:Record<ChangeChoice,string>={person:"Replace character",motion:"Motion transfer",swap:"Swap a thing",restyle:"Restyle",reframe:"Reframe"};
 const ICONS:Record<ChangeChoice,ReactNode>={person:<UserRoundPen size={18}/>,motion:<Footprints size={18}/>,swap:<Shapes size={18}/>,restyle:<Palette size={18}/>,reframe:<Maximize2 size={18}/>};
 
+/* The card says what the tool does in large type; the model is already chosen, so the small line only names it. */
+const CHOICE_MODEL:Record<ChangeChoice,string>={person:"MiniMax H3",motion:"HyperFlow H3",swap:"MiniMax H3",restyle:"HyperFlow H3",reframe:"HyperFlow H3"};
+const CHOICE_LOOP:Partial<Record<ChangeChoice,string>>={swap:"/examples/promo/swap-thing.mp4",person:"/examples/squarehead/jutsu-01.mp4"};
+
 /** "Change a video": the choice of tool sits at the top of the tool's own panel, so this page has exactly the
  *  same layout as Create (panel left, results in the free space). Replace character renders its own panel. */
 export function TransformVideo({manifests,statuses,user,workspace,project,workers,call,canQueue,authorized,onCapability,onQueued,replace,swapThing,onModels,choice=replace?"person":"motion",reframe,unifiedSwap=false}:{
@@ -44,7 +48,9 @@ export function TransformVideo({manifests,statuses,user,workspace,project,worker
      moving them to the first tool this computer can actually run. */
   const availableKey=cards.map(card=>card.id).join(",");
   useEffect(()=>{if(cards.length&&!cards.some(card=>card.id===choice))location.hash=`video/transform/${cards[0].id}`;},[availableKey,choice]);
-  const switcher=<div className="cf-form"><TeamChoice variant="pill" label="What to change" display={TOOL_LABELS[choice]} value={choice} options={cards.map(card=>({value:card.id,label:card.label,icon:ICONS[card.id]}))} onChange={id=>{location.hash=`video/transform/${id}`;}}/></div>;
+  /* Swap a thing and Replace character have no composer model card of their own: there the choice is the card. */
+  const ownPanel=choice==="swap"&&!!swapThing||choice==="person"&&!!replace;
+  const switcher=<div className="cf-form"><TeamChoice variant={ownPanel?"model":"pill"} label="What to change" display={TOOL_LABELS[choice]} subtitle={CHOICE_MODEL[choice]} video={CHOICE_LOOP[choice]} value={choice} options={cards.map(card=>({value:card.id,label:card.label,icon:ICONS[card.id]}))} onChange={id=>{location.hash=`video/transform/${id}`;}}/></div>;
   /* Inside Restyle, the background change is the second choice, offered only when its route is ready. */
   const kinds=choice==="restyle"&&background&&candidates.restyle.length>0
     ?<SegmentedTabs quiet label="What changes" value={backgroundOn?"background":"look"} onChange={chooseKind} items={[{id:"look" as const,label:"New look"},{id:"background" as const,label:"New background"}]}/>

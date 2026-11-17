@@ -1,5 +1,5 @@
 import {useEffect,useState,type ReactNode} from "react";
-import {Block,LazyVideo,MediaViewerInfo,ResultGrid,ResultTile} from "../ds";
+import {Block,LazyVideo,MediaViewerInfo,MosaicTile,ResultGrid,ResultTile} from "../ds";
 import {EXAMPLE_RECIPES,FEATURED_VIDEO_EXAMPLES,LOW_PRIORITY_EXAMPLES,OPENJUTSU_SHOWCASE,POOL_VIDEOS,RECIPE_VIDEOS,SQUAREHEAD_EXAMPLE_IMAGES,SQUAREHEAD_EXAMPLE_VIDEOS} from "./reels";
 import {LOAD_TURN} from "./reload-turn";
 import {useRecreateMedia} from "./recreate";
@@ -10,7 +10,9 @@ function readHidden():string[]{try{const v=JSON.parse(localStorage.getItem(HIDDE
 const REMOVE={deleteTitle:"Remove this example?",deleteText:"It no longer shows in your feeds in this browser. Your own files are not touched."};
 
 /* Example media (the placeholder set) under a tool's own runs: clips play in a muted loop, pictures sit still. Clearly labelled, following the latest runs in the same grid. */
-export function ExampleTiles({kind,count,leading,leadingCount=0,videoSources,imageSources,caption="Example"}:{kind:"video"|"image";count?:number;leading?:ReactNode;leadingCount?:number;videoSources?:readonly string[];imageSources?:readonly string[];caption?:string}){
+export function ExampleTiles({kind,count,leading,leadingCount=0,videoSources,imageSources,caption="Example",inMosaic}:{kind:"video"|"image";count?:number;leading?:ReactNode;leadingCount?:number;videoSources?:readonly string[];imageSources?:readonly string[];caption?:string;
+  /** Only the tiles, each in a MosaicTile, to continue a project feed in the same grid instead of a second one below it. */
+  inMosaic?:boolean}){
   const [pictures,setPictures]=useState<string[]>([]),[hidden,setHidden]=useState<string[]>(readHidden);
   const hide=(src:string)=>{const next=[...new Set([...readHidden(),src])];try{localStorage.setItem(HIDDEN_EXAMPLES,JSON.stringify(next));}catch{/* storage may be unavailable: hidden for this view only */}setHidden(next);};
   useEffect(()=>{let current=true;if(kind==="image")fetch("/examples/pool.json").then(r=>r.ok?r.json():{images:[]}).then((p:{images?:string[]})=>{if(current&&Array.isArray(p.images))setPictures(p.images.map(f=>`/examples/${f}`));}).catch(()=>{});return()=>{current=false;};},[kind]);
@@ -21,6 +23,7 @@ export function ExampleTiles({kind,count,leading,leadingCount=0,videoSources,ima
   const others=all.filter(src=>!featured.includes(src)&&!showcases.includes(src)&&!LOW_PRIORITY_EXAMPLES.includes(src)),late=all.filter(src=>!featured.includes(src)&&!showcases.includes(src)&&LOW_PRIORITY_EXAMPLES.includes(src));
   const cut=others.length?LOAD_TURN%others.length:0,sources=[...featured,...showcases,...others.slice(cut),...others.slice(0,cut),...late];
   if(!sources.length&&!leadingCount)return null;
+  if(inMosaic)return <>{sources.slice(0,count??sources.length).map(src=><MosaicTile key={src}><ExampleTile src={src} kind={kind} caption={caption} onHide={()=>hide(src)}/></MosaicTile>)}</>;
   return <Block label="Examples"><ResultGrid count={leadingCount+Math.min(count??sources.length,sources.length)} aspect={0} label="Results and examples">{leading}{sources.slice(0,count??sources.length).map(src=><ExampleTile key={src} src={src} kind={kind} caption={caption} onHide={()=>hide(src)}/>)}</ResultGrid></Block>;
 }
 

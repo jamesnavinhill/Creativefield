@@ -40,7 +40,10 @@ import type {ShotStatus} from "./shot-status";
 // shot (MoGe anchor gives up and metric scale); people and set points move into the anchor frame.
 // Version 16 (2026-11-15,): the set is fitted as oriented boxes, slabs and upright cylinders per
 // connected part of the stage points instead of voxel stairs.
-export const ANALYSIS_CONTRACT_VERSION = 16;
+// Version 22 (2026-11-16): a shot without a camera path has as many people as are seen at once (a pan
+// made eight of two), nobody stands closer than 0.8 m, no set box blocks the camera, and the people set
+// the scale of the room when no floor was found; a floor the people contradict is not used.
+export const ANALYSIS_CONTRACT_VERSION = 22;
 
 /** Resolution levels and keyframe policy; a change invalidates the cache. */
 export type PyramidParams = {

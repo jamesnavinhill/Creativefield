@@ -134,7 +134,7 @@ export default function TeamApp(){
   const signOut=useCallback(async()=>{await call("/auth/logout","POST");setUser(null);setWorkspaces([]);setWorkspaceId("");setAuthRequired(false);},[call]);
   const closeReauth=useCallback(()=>{},[]);
   const workspace=workspaces.find(w=>w.id===workspaceId);
-  if(loading)return <div className="cf-auth"><ShimmerText>Connecting to your team server…</ShimmerText></div>;
+  if(loading)return <div className="cf-auth"><ShimmerText>CreativeField</ShimmerText></div>;
   if(!user)return <AuthPanel onSignedIn={signIn} serverError={error||undefined} onRetry={()=>void signIn().catch(e=>setError((e as Error).message))}/>;
   return <ToastHost><ProblemHost>
     {workspace?<TeamWorkspace key={`${user.id}:${workspace.id}`} user={user} workspace={workspace} workspaces={workspaces} onWorkspace={setWorkspaceId} call={call} authorized={!authRequired} offline={offline} onSignOut={signOut} onReconnect={()=>void signIn().catch(e=>setError((e as Error).message))}/>:<div className="cf-auth"><EmptyState title="No workspace access" text={noWorkspaceText(audienceOf(user))} action={<Button variant="secondary" onClick={()=>void signOut()}>Sign out</Button>}/></div>}
@@ -161,7 +161,7 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
   /* First run: only an admin of this workspace sees the setup gate; the server keeps completion and the
      chosen models folder, so another browser on the same workspace does not ask again. */
   useEffect(()=>{
-    if(!authorized||workspace.role!=="admin")return;
+    if(!authorized||workspace.role!=="admin"||user.guest)return;/* The hosted app has no folders or servers to set up. */
     let current=true;
     void call<{completed:boolean;dismissed:boolean}>(workspacePath(workspace.id,"onboarding"),"GET")
       .then(state=>{if(current&&!state.completed&&!state.dismissed)setOnboardingOpen(true);})
@@ -641,7 +641,7 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
   /* While the server is away the problem bar already states the cause, so the body waits quietly. */
   const waiting=offline||!authorized||(!!error&&!catalogue.length);
   const fallbackNext=resolved.kind==="missing"&&!waiting?resolved.next:undefined;
-  const fallbackTitle=waiting?"Waiting for the team server":resolved.kind==="missing"?resolved.title:"Checking what this computer can run";
+  const fallbackTitle=waiting?(hosted?"Loading":"Waiting for the team server"):resolved.kind==="missing"?resolved.title:"Checking what this computer can run";
   const fallbackText=resolved.kind==="missing"&&!waiting?resolved.text:undefined;
   async function savePreviewCrop(file:File){
     if(!canCreate||!project)throw new Error("Choose a project with creator access to save a crop.");

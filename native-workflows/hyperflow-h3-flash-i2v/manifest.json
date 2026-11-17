@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "title": "HyperFlow H3 Flash",
   "category": "i2v",
-  "description": "Bring a picture to life: add your idea for the movement and let HyperFlow H3 Flash create a video with sound on your computer. Choose a Deno upscale finish when you want a larger result.",
+  "description": "Animate a reference picture with HyperFlow H3 Flash. Choose normal output or a Deno tiled finish.",
   "inputs": [{"id":"start_image","label":"Start image","type":"image","required":true,"binding":{"node":"20","field":"image"}},{"id":"reference_image","label":"Reference 1","type":"image","required":false,"omitWhenMissing":true,"binding":{"node":"ref:1","field":"image"}},{"id":"reference_image_2","label":"Reference 2","type":"image","required":false,"omitWhenMissing":true,"binding":{"node":"ref:2","field":"image"}},{"id":"reference_image_3","label":"Reference 3","type":"image","required":false,"omitWhenMissing":true,"binding":{"node":"ref:3","field":"image"}},{"id":"end_image","label":"End image","type":"image","required":false,"binding":{"node":"end:load","field":"image"}}],
   "outputs": [{"id":"video","label":"Video","type":"video","required":true}],
   "controls": [

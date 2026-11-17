@@ -1040,8 +1040,7 @@ export class ExecutionService {
   /** A run the server queues on another run's output: same project, worker and slate, sound kept (an Enhance step passes the worker it was routed to). */
   private async queueChainedStep(run:any,key:string,bundle:CapabilityBundle,routeId:string,inputs:Record<string,string>,controls:Record<string,string|number|boolean>,stamp:(invocation:Invocation)=>void):Promise<void>{
     const audioPolicy=bundle.manifest.audioPolicies.includes("preserve")?"preserve":bundle.manifest.audioPolicies[0]??"mute";
-    /* The key is server-owned (its prefix is reserved for public requests), so it joins after validation. */
-    const body={...requestSchema.omit({idempotencyKey:true}).parse({projectId:run.project_id,workerId:run.worker_id,capabilityId:bundle.manifest.id,version:bundle.manifest.version,routeId,inputs,controls,audioPolicy}),idempotencyKey:key};
+    const body=requestSchema.parse({projectId:run.project_id,workerId:run.worker_id,idempotencyKey:key,capabilityId:bundle.manifest.id,version:bundle.manifest.version,routeId,inputs,controls,audioPolicy});
     const requestHash=hashToken(canonical(body));
     await transaction(this.pool,async client=>{
       const prepared=await prepareInvocation(client,this.catalogue,run.workspace_id,body,this.store);
