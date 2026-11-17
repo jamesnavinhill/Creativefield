@@ -1,4 +1,5 @@
-﻿import {lazy,Suspense,useEffect,useMemo,useRef,useState} from "react";
+﻿import {SourceCredit,WorkflowDescription} from "../team/workflow-info";
+import {lazy,Suspense,useEffect,useMemo,useRef,useState} from "react";
 import {Block,Button,Dialog,EmptyState,LinkButton,Meta,Notice,PromptField,StatusText,Thumb,ThumbGrid,Toolbar} from "../ds";
 import {workspacePath,type Call,type Project,type Worker,type Workspace} from "../team/api";
 import {compileShotDirection,type VideoHandoff} from "../capabilities/shot-direction";
@@ -280,6 +281,10 @@ export function H3FilmStudio({workspace,project,call,canCreate,onOpenShotGenerat
 
   if(legacy)return <LegacyFilmStudio workspace={workspace} project={project} canCreate={canCreate} onOpenShotGenerator={onOpenShotGenerator} onSendToVideo={onSendToVideo}/>;
   return <div className="cf-h3studio">
+    <WorkflowDescription title="Film Studio">
+      <Meta>Edit clips on one timeline. Analyze clip measures a clip's camera and adds a grey-block previs of it.</Meta>
+      <SourceCredit credit={{name:"H3 Editor by Igor LS",url:"https://github.com/igorls/comfyui-h3-editor",license:"GPL-3.0",what:"The timeline editor"}}/>
+    </WorkflowDescription>
     <Toolbar end={<><Meta>{worker?.name??"Looking for HyperFlow H3 Flash"}</Meta>{clips.length>0&&<Button variant="secondary" onClick={()=>void openAnalysis()}>Analyze clip</Button>}<Button variant="ghost" onClick={()=>setLegacy(true)}>Classic studio</Button>{origin&&<LinkButton variant="secondary" href={`/h3-editor/${workspace.id}/h3take/editor?project=${encodeURIComponent(name)}`}>Open in new tab</LinkButton>}</>}>
       <Meta>H3 Editor</Meta>
     </Toolbar>

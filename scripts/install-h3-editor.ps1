@@ -27,8 +27,18 @@ function Set-CreativeFieldTheme {
   Set-Content -Path $editorCss -Value "$css`n`n$(Get-Content $theme -Raw)" -NoNewline -Encoding utf8
 }
 
+# The release label in the editor bar links to the upstream project (credit for the GPL-3.0 editor).
+$editorHtml = Join-Path $target 'editor\index.html'
+function Set-CreativeFieldLinks {
+  $html = Get-Content $editorHtml -Raw
+  $label = '<span class="release" title="The version of H3 Editor this is">H3 Editor __RELEASE__</span>'
+  $link = '<a class="release" href="https://github.com/igorls/comfyui-h3-editor" target="_blank" rel="noopener noreferrer" title="H3 Editor by Igor LS on GitHub">H3 Editor __RELEASE__</a>'
+  if ($html.Contains($label)) { Set-Content -Path $editorHtml -Value $html.Replace($label, $link) -NoNewline -Encoding utf8 }
+}
+
 if (Test-Path $editorJs) {
   Set-CreativeFieldTheme
+  Set-CreativeFieldLinks
   Write-Host "H3 Editor is already installed at $target; theme refreshed, nothing else changed."
   exit 0
 }
@@ -108,6 +118,7 @@ Set-CreativeFieldTheme
 Write-Host "Installed H3 Editor at $target"
 Write-Host "Project mapping: ?project=cf-<projectId> is created once and reopened."
 Write-Host "Same-origin hosting: /h3-editor/<workspaceId>/h3take/editor."
+Set-CreativeFieldLinks
 Write-Host "Theme: scripts/h3-editor-theme.css appended to editor/editor.css."
 
 if ($PythonExe -and (Test-Path $PythonExe)) {
