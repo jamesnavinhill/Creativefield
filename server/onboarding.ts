@@ -116,9 +116,12 @@ export async function onboardingRoutes(app: FastifyInstance, pool: Pool, config:
     const {workspaceId} = params.parse(request.params);
     await member(pool, request, workspaceId, "admin");
     if (!config.localSingleUser || !LOOPBACK.has(request.ip)) throw new HttpError(403, "ComfyUI can only be started from the app on this computer.");
-    const index = z.object({index: z.number().int().min(0).max(20).default(0)}).strict().parse(request.body ?? {}).index;
-    const install = comfyInstalls()[index];
-    if (!install) throw new HttpError(404, "No ComfyUI install was found on this computer.");
+    /* The person confirms the exact folder shown in the dialog; it is searched again now (no cache) and started only
+       when that same folder is still a ComfyUI install, so a folder planted later is never run unseen. */
+    const {home} = z.object({home: z.string().min(3).max(1000)}).strict().parse(request.body ?? {});
+    installCache = undefined;
+    const install = comfyInstalls().find(found => path.resolve(found.home).toLowerCase() === path.resolve(home).toLowerCase());
+    if (!install) throw new HttpError(409, "That ComfyUI folder was not found again. Check again, then confirm the folder shown.");
     launch(install);
     return {state: "starting", kind: install.kind, home: install.home};
   });

@@ -73,7 +73,7 @@ export function OnboardingGate({open,workspaceId,call,onClose}:{open: boolean; w
   /** Starts the install found on disk, then waits until it answers and connects it by itself. */
   const start = async () => {
     setPhase("starting"); setError(undefined);
-    try { await call(workspacePath(workspaceId, "onboarding/start-comfy"), "POST", {index: 0}); }
+    try { await call(workspacePath(workspaceId, "onboarding/start-comfy"), "POST", {home: install?.home}); }
     catch (cause) { setError({title: "ComfyUI could not be started", text: "Start it yourself (its start file or app), then check again.", details: (cause as Error).message}); setPhase("installed"); return; }
     const until = Date.now() + START_WAIT_MS;
     while (alive.current && Date.now() < until) {
