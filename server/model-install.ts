@@ -26,7 +26,12 @@ import type {CapabilityBundle, WorkerInventory} from "../src/capabilities/types"
 const run = promisify(execFile);
 type Sources = {models: Record<string, {url: string; bytes: number; sha256?: string}>; nodes: Record<string, {repo: string; with?: string[]}>};
 const sources: Sources = (() => {
-  try { return JSON.parse(readFileSync(path.resolve("native-workflows", "model-sources.json"), "utf8")) as Sources; }
+  try {
+    const loaded = JSON.parse(readFileSync(path.resolve("native-workflows", "model-sources.json"), "utf8")) as Sources;
+    /* Only HTTPS downloads from Hugging Face; anything else in the file is ignored. */
+    loaded.models = Object.fromEntries(Object.entries(loaded.models ?? {}).filter(([, source]) => { try { const url = new URL(source.url); return url.protocol === "https:" && url.hostname === "huggingface.co"; } catch { return false; } }));
+    return loaded;
+  }
   catch { return {models: {}, nodes: {}}; }
 })();
 
@@ -102,7 +107,9 @@ export async function download(item: InstallItem, dest: string, signal: AbortSig
       if (have < item.bytes) {
         const headers: Record<string, string> = {"user-agent": "CreativeField"};
         if (have) headers.range = `bytes=${have}-`;
-        if (process.env.HF_TOKEN && /huggingface\.co/.test(item.url ?? "")) headers.authorization = `Bearer ${process.env.HF_TOKEN}`;
+        /* The token goes only to Hugging Face itself over HTTPS; fetch drops it on a redirect to another host. */
+        const source = new URL(item.url!);
+        if (process.env.HF_TOKEN && source.protocol === "https:" && source.hostname === "huggingface.co") headers.authorization = `Bearer ${process.env.HF_TOKEN}`;
         const response = await fetch(item.url!, {headers, signal, redirect: "follow"});
         if (response.status === 401 || response.status === 403) throw Object.assign(new Error("This model needs a Hugging Face sign-in. Set HF_TOKEN, then try again."), {final: true});
         if (!response.ok || !response.body) throw new Error(`The download answered ${response.status}.`);
