@@ -31,6 +31,7 @@ export async function ensureLocalUser(pool: Pool): Promise<Principal> {
         const workspaceId = newId();
         await client.query("INSERT INTO workspaces(id,name) VALUES($1,'Local studio')", [workspaceId]);
         await client.query("INSERT INTO memberships(workspace_id,user_id,role) VALUES($1,$2,'admin')", [workspaceId, existing.id]);
+        await client.query("INSERT INTO projects(id,workspace_id,name,created_by) VALUES($1,$2,'First project',$3)", [newId(), workspaceId, existing.id]);
       }
       return existing as Principal;
     }
@@ -38,6 +39,8 @@ export async function ensureLocalUser(pool: Pool): Promise<Principal> {
     await client.query("INSERT INTO users(id,email,password_hash) VALUES($1,'local@comfyfield.local',$2)", [userId, await hashPassword(generateLocalSecret())]);
     await client.query("INSERT INTO workspaces(id,name) VALUES($1,'Local studio')", [workspaceId]);
     await client.query("INSERT INTO memberships(workspace_id,user_id,role) VALUES($1,$2,'admin')", [workspaceId, userId]);
+    /* A first start opens on the tools, not on an empty "No projects yet". */
+    await client.query("INSERT INTO projects(id,workspace_id,name,created_by) VALUES($1,$2,'First project',$3)", [newId(), workspaceId, userId]);
     return { id: userId, email: "local@comfyfield.local" };
   });
 }

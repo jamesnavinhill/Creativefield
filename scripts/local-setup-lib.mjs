@@ -5,7 +5,8 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 
 export const PG_PORT = 55433;
-export const SERVER_PORT = 8787;
+// PORT moves the app off 8787 when another program already uses it.
+export const SERVER_PORT = Number.isInteger(Number(process.env.PORT)) && Number(process.env.PORT) > 0 ? Number(process.env.PORT) : 8787;
 export const PG_DATABASE = "comfyfield";
 export const PG_USER = "postgres";
 

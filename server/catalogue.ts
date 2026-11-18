@@ -40,7 +40,8 @@ async function nativePack(name: string, dir: URL, log: (message: string) => void
     return null;
   }
   if (nested.manifest.comfyuiGraph === false) {
-    log(`Skipping native-workflows/${name}: ${nested.name} is not a ComfyUI graph (runtime ${nested.manifest.runtime ?? "none"})`);
+    /* An app that runs without ComfyUI (for example Ad Studio) is expected here: no startup line, which
+       people read as an error (GitHub issue #1). */
     return null;
   }
   const declared = ["kind", "runtime"].filter(key => typeof nested.manifest[key] === "string").map(key => `${key} ${nested.manifest[key]}`);
