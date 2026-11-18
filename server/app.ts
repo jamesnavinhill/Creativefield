@@ -61,6 +61,7 @@ import {replaceClipCheckRoutes} from "./replace-clip-check";
 import {promptExpanderRoutes} from "./prompt-expander";
 import {onboardingRoutes} from "./onboarding";
 import {installRoutes} from "./model-install";
+import {keepTextRoutes} from "./keep-text";
 import {launchInstall, rememberRunning, savedInstall} from "./comfy-install";
 import {h3EditorRoutes} from "./h3-editor";
 import {h3EditorProxyRoutes} from "./h3-proxy";
@@ -446,6 +447,7 @@ export async function buildServer(config: ServerConfig, pool: Pool, dependencies
   await promptExpanderRoutes(app,pool);
   await onboardingRoutes(app,pool,config);
   await installRoutes(app,pool,config,catalogue);
+  await keepTextRoutes(app,pool,store,config);
   await h3EditorRoutes(app,pool,store);
   await h3EditorProxyRoutes(app,pool,config.publicOrigin);
   app.get(`${base}/node-editor`,async request=>{

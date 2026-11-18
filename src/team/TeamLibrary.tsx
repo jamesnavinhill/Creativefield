@@ -12,6 +12,7 @@ import {isOutOfMemory} from "../capabilities/memory-rescue";
 import {runFacts} from "./run-facts";
 import {runShape} from "./run-shape";
 import {groupByDay} from "./day-groups";
+import {KeepTextDialog} from "./KeepTextDialog";
 const VoiceRunReview=lazy(()=>import("./audio/VoiceRunReview").then(module=>({default:module.VoiceRunReview})));
 const SpeechAudioPlayer=lazy(()=>import("./audio/SpeechAudioPlayer").then(module=>({default:module.SpeechAudioPlayer})));
 import {activeRun,runLabel} from "./state";
@@ -76,6 +77,7 @@ function ProjectRuns({workspace,project,call,canEdit,authorized,version,user,tit
     async function read(){try{const items:Asset[]=[];let cursor:string|null=null;do{const page:AssetPage=await call<AssetPage>(workspacePath(workspace.id,`assets?projectId=${encodeURIComponent(project.id)}${cursor?`&cursor=${encodeURIComponent(cursor)}`:""}`));items.push(...page.items);cursor=page.nextCursor;}while(cursor&&current);if(current){setFeedAssets(old=>unchanged(old,items));setFeedAssetError("");}}catch(e){if(current)setFeedAssetError((e as Error).message);}finally{if(current)timer=setTimeout(read,10000);}}
     void read();return()=>{current=false;clearTimeout(timer);};
   },[authorized,call,workspace.id,project.id,feed?.kind,version]);
+  const [keepText,setKeepText]=useState<{runId:string;pictureId:string}>();
   const recreate=useRecreate();
   // The list holds the short record; what a run was made from comes with its own record, fetched when its details open.
   const [detail,setDetail]=useState<Record<string,Run>>({});
@@ -190,6 +192,8 @@ function ProjectRuns({workspace,project,call,canEdit,authorized,version,user,tit
       {/* The tool's own next steps (Edit image, Use in video) live here, in the result's details, never under the content. */}
       {run.state==="succeeded"&&outputAction?.(run)}
       {canEdit&&run.state==="succeeded"&&full.invocation&&full.worker_id&&full.invocation.controls.sharpen!==true&&capabilityHasControl(run.capability_id,"sharpen")&&<Button variant="secondary" disabled={canceling===run.id} onClick={()=>void sharpen(full)}>Sharpen this take</Button>}
+      {/* Keep text: lettering from the start picture tracked onto every frame (local app only, Pad DOC-1343). */}
+      {canEdit&&user.localSingleUser&&run.state==="succeeded"&&full.invocation?.inputs.start_image&&output?.content_type?.startsWith("video/")&&<Button variant="secondary" onClick={()=>setKeepText({runId:run.id,pictureId:full.invocation!.inputs.start_image})}>Keep text</Button>}
       <Button variant="ghost" disabled={run.state==="pending"} onClick={()=>void exportGraph(run)}>Export workflow</Button>
     </>} onRecreate={recreate(full)??(run.state==="succeeded"&&run.output_ids.length?()=>void recreateById(run.id):undefined)} inputs={visibleRunInputs(workspace.id,full)} facts={richFacts(run,full,output)} details={<>{full.capability_id==="scail2-character-replace"&&full.invocation&&<RunReferenceInspection workspace={workspace.id} run={full} call={call}/>}{seenOf(full).length>0&&<FrameStrip label="What the model saw" items={seenOf(full)}/>}{run.error?<ClampText text={run.error} lines={2} title="Why this run failed"/>:null}<Meta parts={[`Version ${run.capability_version}`,run.id]}/></>}/>{run.capability_id==="wan22-flf2v-14b"&&run.state==="succeeded"&&run.output_ids[0]&&<RunFrameInspection workspace={workspace.id} runId={run.id} call={call} authorized={authorized} canEdit={canEdit}/>}</div>;};
   const runTiles=shown.map(run=>runItem(run,false,compareUrl(runCard(run))));
@@ -232,6 +236,7 @@ function ProjectRuns({workspace,project,call,canEdit,authorized,version,user,tit
     {pickedOutputs.length>0&&<Toolbar><Button variant="secondary" onClick={()=>setSheetOpen(true)}>Contact sheet · {pickedOutputs.length}</Button><Button variant="ghost" onClick={()=>{setPicked({});setSheetOpen(false);}}>Clear</Button></Toolbar>}
     {feedAssetError&&<Notice priority={20} consequence title="Library couldn't be updated" details={feedAssetError}>The feed shows the last media it read.</Notice>}
     {feed?feedView:examples?<ExampleTiles kind={examples} leading={runTiles} leadingCount={shown.length} videoSources={examples==="video"&&promoReelForCapability(capabilityId)?[...new Set([...FEATURED_VIDEO_EXAMPLES,...SQUAREHEAD_EXAMPLE_VIDEOS,promoReelForCapability(capabilityId)!])]:undefined}/>:<ResultGrid count={shown.length} aspect={0} label="Project runs">{runTiles}</ResultGrid>}
+    {keepText&&<KeepTextDialog open workspaceId={workspace.id} runId={keepText.runId} pictureId={keepText.pictureId} call={call} onClose={()=>setKeepText(undefined)} onDone={()=>setUpdate(v=>v+1)}/>}
     <Dialog wide open={authorized&&sheetOpen&&sheetItems.length>0} title="Selected results" onClose={()=>setSheetOpen(false)} footer={<Button variant="secondary" onClick={()=>setSheetOpen(false)}>Close</Button>}>
       <ContactSheet items={sheetItems} title={`Selected results · ${project.name}`} fileName={`selected-results-${project.id.slice(0,8)}.png`}/>
     </Dialog>

@@ -17,7 +17,7 @@
   ],
   "presets": [],
   "timing": {"fps":24,"minSeconds":1,"maxSeconds":15,"sourceTimed":false,"frameMapping":"hyperflow_seconds_17n5"},
-  "resolutions": {"portrait":{"width":576,"height":1024},"landscape":{"width":1024,"height":576},"square":{"width":768,"height":768},"portrait-standard":{"width":768,"height":1024},"landscape-standard":{"width":1024,"height":768}},
+  "resolutions": {"portrait":{"width":576,"height":1024},"landscape":{"width":1024,"height":576},"square":{"width":768,"height":768},"portrait-standard":{"width":768,"height":1024},"landscape-standard":{"width":1024,"height":768},"landscape-preview":{"width":832,"height":480}},
   "routes": [{"id":"local","execution":"local_comfy","provider":"comfy-local","upstreamProviders":[],"implementation":"implemented","workflowId":"hyperflow-h3-flash-i2v","requirements":[
     {"id":"node:HyperFlowGGUFLoader","kind":"node","name":"HyperFlowGGUFLoader","instructions":"Install the reviewed HyperFlow H3 Flash loader on the local worker."},
     {"id":"node:HyperFlowSigmas","kind":"node","name":"HyperFlowSigmas","instructions":"Install the reviewed HyperFlow H3 Flash sampler schedule."},
