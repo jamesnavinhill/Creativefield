@@ -108,20 +108,36 @@ def apply(clip, picture, out_path, boxes):
         pm = np.zeros((H, W), np.float32); cv2.rectangle(pm, (bx0, by0), (bx1, by1), 1.0, -1)
         pm = blur(cv2.warpPerspective(pm, np.linalg.inv(ref_to_0), (W, H)), 2.5)
         before, after = [], []
+        corners = np.float32([[[rx0, ry0]], [[rx1, ry0]], [[rx1, ry1]], [[rx0, ry1]]])
+        bw, bh = bx1 - bx0, by1 - by0
+        to_box = np.array([[1, 0, -bx0], [0, 1, -by0], [0, 0, 1]], np.float64)
         for t in range(len(frames)):
             f = result[t]
             M = homs[t] @ ref_to_0
-            wref = cv2.warpPerspective(ref, M, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-            wmask = cv2.warpPerspective(pm, M, (W, H))
-            inv = dis.calc(blur(gray(f), 4.0), blur(gray(wref), 4.0), None) * (wmask > 0.01)[..., None]
-            pulled = cv2.remap(wref, gx + inv[..., 0], gy + inv[..., 1], cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-            pmask = cv2.remap(wmask, gx + inv[..., 0], gy + inv[..., 1], cv2.INTER_LINEAR)
-            lf, lr = blur(f.astype(np.float32), 6.0), blur(pulled.astype(np.float32), 6.0)
+            # Only the area around the print in this frame is worked on: the tracked padded box, plus a margin for
+            # the cloth flow. Every step below is the same as on the whole frame, translated into that crop.
+            poly = cv2.perspectiveTransform(corners, homs[t]).reshape(-1, 2)
+            margin = 16
+            cx0, cy0 = max(0, int(poly[:, 0].min()) - margin), max(0, int(poly[:, 1].min()) - margin)
+            cx1, cy1 = min(W, int(np.ceil(poly[:, 0].max())) + margin), min(H, int(np.ceil(poly[:, 1].max())) + margin)
+            if cx1 - cx0 < 8 or cy1 - cy0 < 8:
+                before.append(np.zeros((bh, bw, 3), np.float32)); after.append(np.zeros((bh, bw, 3), np.float32)); continue
+            cw, ch = cx1 - cx0, cy1 - cy0
+            Mc = np.array([[1, 0, -cx0], [0, 1, -cy0], [0, 0, 1]], np.float64) @ M
+            crop = f[cy0:cy1, cx0:cx1]
+            wref = cv2.warpPerspective(ref, Mc, (cw, ch), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+            wmask = cv2.warpPerspective(pm, Mc, (cw, ch))
+            inv = dis.calc(blur(gray(crop), 4.0), blur(gray(wref), 4.0), None) * (wmask > 0.01)[..., None]
+            lx, ly = gx[:ch, :cw], gy[:ch, :cw]
+            pulled = cv2.remap(wref, lx + inv[..., 0], ly + inv[..., 1], cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+            pmask = cv2.remap(wmask, lx + inv[..., 0], ly + inv[..., 1], cv2.INTER_LINEAR)
+            lf, lr = blur(crop.astype(np.float32), 6.0), blur(pulled.astype(np.float32), 6.0)
             lit = np.clip(pulled.astype(np.float32) * np.clip(lf / np.maximum(lr, 1.0), 0.5, 2.0), 0, 255)
-            comp = (f.astype(np.float32) * (1 - pmask[..., None]) + lit * pmask[..., None]).astype(np.uint8)
-            back_h = np.linalg.inv(homs[t])
-            before.append(cv2.warpPerspective(frames[t], back_h, (W, H))[by0:by1, bx0:bx1].astype(np.float32))
-            after.append(cv2.warpPerspective(comp, back_h, (W, H))[by0:by1, bx0:bx1].astype(np.float32))
+            comp = f.copy()
+            comp[cy0:cy1, cx0:cx1] = (crop.astype(np.float32) * (1 - pmask[..., None]) + lit * pmask[..., None]).astype(np.uint8)
+            back_box = to_box @ np.linalg.inv(homs[t])
+            before.append(cv2.warpPerspective(frames[t], back_box, (bw, bh)).astype(np.float32))
+            after.append(cv2.warpPerspective(comp, back_box, (bw, bh)).astype(np.float32))
             result[t] = comp
         step = lambda acc: float(np.mean([np.abs(acc[i] - acc[i - 1]).mean() for i in range(1, len(acc))])) if len(acc) > 1 else 0.0
         report.append({"box": [bx0, by0, bx1, by1], "change_before": round(step(before), 2), "change_after": round(step(after), 2), "frames_without_track": lost_track})

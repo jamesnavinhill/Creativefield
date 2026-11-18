@@ -27,6 +27,10 @@ export const isEndResultAsset=(asset:Asset)=>{
   if(isRunWorkingAsset(asset))return false;
   const capability=String((asset.metadata?.generation as {capabilityId?:unknown}|undefined)?.capabilityId??"");
   if(capability&&FINISH_STEP.test(capability))return false;
+  /* A run's own output, or a Keep text copy of one, is a result whatever its file is called: with the default Upscale
+     finish every image-to-video file is named "hyperflow-upscale_000NN_", and the name rule hid all of them. The name
+     rule is for uploaded or saved working files, which carry no producing run. */
+  if(capability||asset.metadata?.keepText)return true;
   if(WORKING_NAME.test(asset.name))return false;
   return true;
 };

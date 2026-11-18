@@ -172,5 +172,6 @@
     "inputs": {
       "image": "last_frame.png"
     }
-  }
+  },
+  "ui:keep_face": {"class_type":"PrimitiveBoolean","inputs":{"value":true}}
 }

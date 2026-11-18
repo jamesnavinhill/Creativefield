@@ -123,7 +123,7 @@
         "node": "ui:quality",
         "field": "value"
       }
-    }
+    },{"id":"keep_face","label":"Keep face (one person through head turns)","type":"boolean","default":false,"binding":{"node":"ui:keep_face","field":"value"}}
   ],
   "presets": [],
   "timing": {

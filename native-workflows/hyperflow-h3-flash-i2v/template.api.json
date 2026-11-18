@@ -360,5 +360,6 @@
       "value": "upscale"
     },
     "class_type": "PrimitiveStringMultiline"
-  }
+  },
+  "ui:keep_face": {"class_type":"PrimitiveBoolean","inputs":{"value":true}}
 }

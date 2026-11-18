@@ -358,5 +358,6 @@
     "inputs": {
       "value": "hd-upscale"
     }
-  }
+  },
+  "ui:keep_face": {"class_type":"PrimitiveBoolean","inputs":{"value":true}}
 }

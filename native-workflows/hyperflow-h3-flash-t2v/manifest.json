@@ -208,7 +208,7 @@
       "url": "https://github.com/Video-Rebirth/ComfyUI-HyperFlow-Flash/blob/main/example_workflows/api/hyperflow_t2v_api.json",
       "observedAt": "2026-11-07",
       "kind": "implementation"
-    }
+    },{"id":"keep_face","label":"Keep face (one person through head turns)","type":"boolean","default":false,"binding":{"node":"ui:keep_face","field":"value"}}
   ],
   "tickets": [],
   "audioPolicies": [

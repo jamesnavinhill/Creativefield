@@ -16,7 +16,7 @@
     {"id":"height","label":"Height","type":"integer","min":256,"max":1344,"default":1024,"binding":{"node":"5","field":"height"}},
     {"id":"length","label":"Length (seconds)","type":"number","min":1,"max":15,"step":1,"default":5,"binding":{"node":"5","field":"length"}},
     {"id":"steps","label":"Steps","type":"select","options":[4,6,8],"default":6,"binding":{"node":"6","field":"steps"}},
-    {"id":"seed","label":"Seed","type":"integer","min":0,"max":2147483647,"default":20261031,"binding":{"node":"8","field":"noise_seed"}}
+    {"id":"seed","label":"Seed","type":"integer","min":0,"max":2147483647,"default":20261031,"binding":{"node":"8","field":"noise_seed"}},{"id":"keep_face","label":"Keep face (one person through head turns)","type":"boolean","default":false,"binding":{"node":"ui:keep_face","field":"value"}}
   ],
   "presets":[],
   "timing":{"fps":24,"minSeconds":1,"maxSeconds":15,"sourceTimed":false,"frameMapping":"hyperflow_seconds_17n5"},

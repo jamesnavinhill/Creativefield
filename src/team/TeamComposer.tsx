@@ -2,7 +2,7 @@ import {isOpenJutsuAdvanced,OPENJUTSU_ADVANCED_FLASH_ID,OPENJUTSU_SCENE_GUIDE,op
 import {SourceCredit,WorkflowDescription} from "./workflow-info";
 import {InstallNotice,type InstallJob} from "./InstallNotice";
 import {TeamMediaInput} from "./TeamMediaInput";
-import {nearestFormat} from "./picture-format";
+import {nearestFormat,nearestSize} from "./picture-format";
 import {imageReaderName,promptStep} from "./prompt-steps";
 import {aboutTime} from "./RunDevelop";
 import {describeEndFrameMention,insertReferenceMention,modelPromptReferences,promptPicturesToSlots,promptSlotsToPictures,usesH3Prompt} from "./prompt-reference";
@@ -377,7 +377,9 @@ export function TeamComposer({manifest:chosenManifest,catalogue,onCapability,use
   }).map(([value,label])=>({value,label}));
   const finishValue=String(draft.controls.quality??"upscale");
   /* A newly chosen start picture sets the format once; a format picked afterwards, or restored by Recreate, stays. */
-  function followPicture(role:string,id:string){if(role!=="start_image"||!id||!aspect?.options)return;const picture=new Image();picture.onload=()=>{const format=picture.naturalHeight?nearestFormat(picture.naturalWidth/picture.naturalHeight,aspect.options!):undefined;if(format!==undefined)setDraft(d=>d.inputs[role]===id?{...d,controls:{...d.controls,[aspect.id]:format as string|number}}:d);};picture.src=assetUrl(workspace.id,id);}
+  /* The output takes the start picture's shape: an aspect control picks the nearest format; named sizes (HyperFlow) pick
+     the nearest size of the current tier, so a 16:9 still is not rendered portrait by the default size. */
+  function followPicture(role:string,id:string){const sizes=manifest.resolutions;if(role!=="start_image"||!id||(!aspect?.options&&!sizes))return;const picture=new Image();picture.onload=()=>{if(!picture.naturalHeight)return;const shape=picture.naturalWidth/picture.naturalHeight;if(aspect?.options){const format=nearestFormat(shape,aspect.options);if(format!==undefined)setDraft(d=>d.inputs[role]===id?{...d,controls:{...d.controls,[aspect.id]:format as string|number}}:d);return;}setDraft(d=>{if(d.inputs[role]!==id)return d;const named=nearestSize(shape,sizes!,d.controls);if(!named)return d;const {width,height}=sizes![named];return {...d,controls:{...d.controls,width,height}};});};picture.src=assetUrl(workspace.id,id);}
   function setInput(role:string,id:string){followPicture(role,id);if(contract&&role===contract.sourceInput)invalidateOperation(uploadGate.current);setDraft(d=>{let inputs={...d.inputs},elementInputs={...d.elementInputs};if(contract&&role===contract.sourceInput)inputs=clearMaskForSource(inputs,manifest);if(id){inputs[role]=id;delete elementInputs[role];}else delete inputs[role];return {...d,inputs,elementInputs};});if(contract&&role===contract.sourceInput){setFiles(f=>({...f,[contract.maskInput]:null}));setBusy("");}}
   async function dropReferenceAsset(port:(typeof manifest.inputs)[number],id:string){
     const turn=beginReferenceDrop(referenceDropEpoch);setError("");

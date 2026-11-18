@@ -12,7 +12,7 @@
     {"id":"width","label":"Width","type":"integer","min":256,"max":1024,"default":576,"binding":{"node":"5","field":"width"}},
     {"id":"height","label":"Height","type":"integer","min":256,"max":1024,"default":1024,"binding":{"node":"5","field":"height"}},
     {"id":"length","label":"Length (seconds)","type":"number","min":1,"max":15,"step":1,"default":5,"binding":{"node":"5","field":"length"}},
-    {"id":"quality","label":"Finish","type":"select","options":["normal","upscale","hd-upscale"],"default":"upscale","binding":{"node":"ui:quality","field":"value"}},
+    {"id":"quality","label":"Finish","type":"select","options":["normal","upscale","hd-upscale"],"default":"upscale","binding":{"node":"ui:quality","field":"value"}},{"id":"keep_face","label":"Keep face (one person through head turns)","type":"boolean","default":false,"binding":{"node":"ui:keep_face","field":"value"}},
     {"id":"seed","label":"Seed","type":"integer","min":0,"max":2147483647,"default":20261031,"binding":{"node":"8","field":"noise_seed"}}
   ],
   "presets": [],

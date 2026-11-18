@@ -75,6 +75,7 @@ import {usesH3AudioPolish,withPolishedH3Audio,withSourceAudio,withUpscaledH3Audi
 import {VIDEO_REFRAME_ID} from "../src/capabilities/video-reframe";
 import {withReframedAudio} from "./video-reframe";
 import {VideoExtensionMediaError} from "./video-extension-media";
+import {queueKeepFace,wantsKeepFace} from "./keep-face";
 
 const base="/api/v1/workspaces/:workspaceId";
 const ws=z.object({workspaceId:z.uuid()}),item=ws.extend({id:z.uuid()});
@@ -1037,6 +1038,15 @@ export class ExecutionService {
       console.warn(`[runs] ${String(run.id)}: the next Enhance step was not queued: ${(error as Error).message}`);
     }
   }
+  /** Keep face (): when the run's switch is on, the face is rendered once more from the
+   *  clip's best frame, as a run of its own beside this one. It finds its frames with SAM 3 first, so it is not
+   *  awaited; a clip without a face is left as it is. */
+  private chainKeepFace(run:any,manifest:CapabilityBundle["manifest"],output:{id:string}):void{
+    if(!wantsKeepFace(manifest,run.invocation?.controls))return;
+    void queueKeepFace({pool:this.pool,store:this.store,catalogue:this.catalogue},run,output.id)
+      .then(outcome=>{if("skipped" in outcome)console.info(`[runs] ${String(run.id)}: Keep face skipped: ${outcome.skipped}`);})
+      .catch(error=>console.warn(`[runs] ${String(run.id)}: Keep face was not queued: ${(error as Error).message}`));
+  }
   /** A run the server queues on another run's output: same project, worker and slate, sound kept (an Enhance step passes the worker it was routed to). */
   private async queueChainedStep(run:any,key:string,bundle:CapabilityBundle,routeId:string,inputs:Record<string,string>,controls:Record<string,string|number|boolean>,stamp:(invocation:Invocation)=>void):Promise<void>{
     const audioPolicy=bundle.manifest.audioPolicies.includes("preserve")?"preserve":bundle.manifest.audioPolicies[0]??"mute";
@@ -1217,7 +1227,7 @@ export class ExecutionService {
       });
       this.clearDevelop(run.id);
       if(result!=="publish")for(const asset of saved)await this.store.remove(run.workspace_id,asset.key).catch(()=>{});
-      else if(declaredMedia==="video"){await this.continueFinishChain(run,saved[0]);await this.chainUpscale(run,manifest,saved[0]);}
+      else if(declaredMedia==="video"){await this.continueFinishChain(run,saved[0]);await this.chainUpscale(run,manifest,saved[0]);this.chainKeepFace(run,manifest,saved[0]);}
     } catch(e) {
       // A COMMIT acknowledgement can be lost. Never remove a possibly published artifact.
       for(const asset of saved){
