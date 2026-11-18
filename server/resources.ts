@@ -8,6 +8,7 @@ import type { DiskStore } from "./storage";
 import {createReadStream} from "node:fs";
 import {mkdir,readFile,rename,stat} from "node:fs/promises";
 import nodePath from "node:path";
+import {createHash} from "node:crypto";
 import {byteRange} from "./range";
 import {generationSchema} from "./storyboard-execution";
 import {DEFAULT_PNG_VALIDATION_LIMITS,PngValidationError,validatePngBytes} from "./image-artifacts-validation";
@@ -34,23 +35,39 @@ type GenerationRow={asset_id:string;run_id:string;capability_id:string;capabilit
  * before, so the producer is read from the runs that list the file as an output (old files included).
  */
 const smallCopies=new Map<string,Promise<string>>();
-/** A WebP copy of a picture at most `width` wide, written once into the app's thumbs folder. */
-function smallCopy(file:string,id:string,width:number):Promise<string>{
-  const dir=nodePath.resolve(process.env.COMFYFIELD_HOME?.trim()||".comfyfield","thumbs"),target=nodePath.join(dir,`${id}-${width}.webp`);
-  let pending=smallCopies.get(target);
-  if(!pending){
-    pending=(async()=>{
-      if(await stat(target).then(()=>true,()=>false))return target;
-      await mkdir(dir,{recursive:true});
-      const {default:sharp}=await import("sharp"),part=`${target}.${process.pid}.part`;
-      await sharp(file).rotate().resize({width,withoutEnlargement:true}).webp({quality:80}).toFile(part);
-      await rename(part,target);
-      return target;
-    })();
-    smallCopies.set(target,pending);
-    void pending.catch(()=>{}).finally(()=>smallCopies.delete(target));
-  }
-  return pending;
+let smallCopyJobs=0;const smallCopyWaiting:Array<()=>void>=[];
+/** At most two pictures are decoded at once, so a burst of tiles cannot exhaust memory. */
+async function smallCopySlot<T>(work:()=>Promise<T>):Promise<T>{
+  if(smallCopyJobs>=2)await new Promise<void>(resolve=>smallCopyWaiting.push(resolve));
+  smallCopyJobs++;
+  try{return await work();}finally{smallCopyJobs--;smallCopyWaiting.shift()?.();}
+}
+/** A WebP copy of a picture at most `width` wide, written once. The copy is named by the workspace, the stored file
+    and that file's size and time, so it can never stand in for another workspace's or a replaced file's picture.
+    Only real PNG, JPEG and WebP data of a sane size is decoded. */
+function smallCopy(file:string,workspaceId:string,storageKey:string,width:number):Promise<string>{
+  return (async()=>{
+    const info=await stat(file);
+    const name=createHash("sha256").update(`${storageKey}|${info.size}|${info.mtimeMs}`).digest("hex").slice(0,32);
+    const dir=nodePath.resolve(process.env.COMFYFIELD_HOME?.trim()||".comfyfield","thumbs",workspaceId),target=nodePath.join(dir,`${name}-${width}.webp`);
+    let pending=smallCopies.get(target);
+    if(!pending){
+      pending=smallCopySlot(async()=>{
+        if(await stat(target).then(()=>true,()=>false))return target;
+        await mkdir(dir,{recursive:true});
+        const {default:sharp}=await import("sharp"),options={limitInputPixels:120_000_000,failOn:"error" as const,sequentialRead:true};
+        const format=(await sharp(file,options).metadata()).format;
+        if(format!=="png"&&format!=="jpeg"&&format!=="webp")throw new Error("not a supported picture");
+        const part=`${target}.${process.pid}.part`;
+        await sharp(file,options).rotate().resize({width,withoutEnlargement:true}).webp({quality:80}).toFile(part);
+        await rename(part,target);
+        return target;
+      });
+      smallCopies.set(target,pending);
+      void pending.catch(()=>{}).finally(()=>smallCopies.delete(target));
+    }
+    return pending;
+  })();
 }
 export async function attachGenerationFacts(pool:Pool,workspaceId:string,items:Array<{id:string;created_at?:Date;metadata?:Record<string,unknown>}>){
   if(!items.length)return;
@@ -283,7 +300,7 @@ export async function resourceRoutes(app: FastifyInstance, pool: Pool, store: Di
        decoded pictures. Made once per file, kept on disk, and the original is the fallback for anything sharp
        cannot read. A file never changes under its id, so the browser may keep the small copy for good. */
     if(query.w&&!query.download&&/^image\/(png|jpeg|webp)$/.test(asset.content_type)){
-      const small=await smallCopy(file,id,Number(query.w)).catch(()=>undefined);
+      const small=await smallCopy(file,workspaceId,asset.storage_key,Number(query.w)).catch(()=>undefined);
       if(small)return reply.header("Content-Type","image/webp").header("Cache-Control","private, max-age=31536000, immutable").header("Content-Length",(await stat(small)).size).send(createReadStream(small));
     }
     const size=(await stat(file)).size;

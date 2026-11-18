@@ -309,7 +309,6 @@ export function SegmentedTabs<T extends string>({
   quiet,
   block,
   large,
-  vertical,
 }: {
   items: TabItem<T>[];
   value: T;
@@ -320,11 +319,9 @@ export function SegmentedTabs<T extends string>({
   block?: boolean;
   /** Page-level filters: bigger targets and text. */
   large?: boolean;
-  /** A rail at the side of a bar (the CommandBar's Image / Video): items stack, icon above the word. */
-  vertical?: boolean;
 }) {
   return (
-    <div className={cx("ds-seg", quiet && "ds-seg--quiet", block && "ds-seg--block", large && "ds-seg--large", vertical && "ds-seg--vertical")} role="tablist" aria-label={label} aria-orientation={vertical ? "vertical" : undefined}>
+    <div className={cx("ds-seg", quiet && "ds-seg--quiet", block && "ds-seg--block", large && "ds-seg--large")} role="tablist" aria-label={label}>
       {items.map((t) => (
         <button
           key={t.id}
@@ -2256,7 +2253,10 @@ function Dropdown({ anchor, align, items, value, onPick, onDismiss }: {
     const place = () => {
       const r = anchor.current?.getBoundingClientRect();
       if (!r) return;
-      setPos(align === "left" ? { top: r.bottom + 4, left: r.left, minWidth: r.width } : { top: r.bottom + 4, right: innerWidth - r.right, minWidth: 0 });
+      // Open upward when the list does not fit below and there is more room above (a bar at the bottom of the screen).
+      const h = menu.current?.offsetHeight ?? 0, up = r.bottom + 4 + h > innerHeight && r.top > innerHeight - r.bottom;
+      const top = up ? r.top - 4 - h : r.bottom + 4;
+      setPos(align === "left" ? { top, left: r.left, minWidth: r.width } : { top, right: innerWidth - r.right, minWidth: 0 });
     };
     place();
     addEventListener("resize", place);
@@ -3117,19 +3117,20 @@ export function WorkspaceBar<T extends string>({ tabs, end, density, info }: {
   );
 }
 
-/* PillMenu: a small chip that shows a choice (the project) and opens a short list under it. */
-export function PillMenu({ icon, label, items, value, footer, onPick }: { icon?: ReactNode; label: string; items: Array<{ id: string; label: string }>; value?: string; footer?: { id: string; label: string }; onPick: (id: string) => void }) {
+/* PillMenu: a small chip that shows a choice (the project, the free input's mode) and opens a short list under it,
+   or above it near the bottom of the screen. `name` says what is chosen ("Mode") for its accessible name. */
+export function PillMenu({ icon, label, name, items, value, footer, align = "right", onPick }: { icon?: ReactNode; label: string; name?: string; items: Array<{ id: string; label: string }>; value?: string; footer?: { id: string; label: string }; align?: "left" | "right"; onPick: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
   const all = footer ? [...items, footer] : items;
   return (
     <span className="ds-popbtn" ref={ref}>
-      <button type="button" className="ds-pillmenu" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="ds-pillmenu" aria-label={name ? `${name}: ${label}` : undefined} title={name} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         {icon}
         <span className="ds-pillmenu__label">{label}</span>
         <ChevronDown size={12} aria-hidden />
       </button>
-      {open && <Dropdown anchor={ref} align="right" value={value ?? ""} items={all} onPick={(id) => { setOpen(false); onPick(id); }} onDismiss={() => setOpen(false)} />}
+      {open && <Dropdown anchor={ref} align={align} value={value ?? ""} items={all} onPick={(id) => { setOpen(false); onPick(id); }} onDismiss={() => setOpen(false)} />}
     </span>
   );
 }
@@ -3655,9 +3656,9 @@ export function MediaViewer({ open, src, name, onClose, actions, onActivate, med
 }
 
 /* CommandBar: one card to say what you want. It floats at the bottom center above the page and grows while you type;
-   Enter sends. The mode (Auto, Image, Video) is a rail on its left and the text sits on top; underneath, the options
-   that work here follow as quiet chips, with a normal-sized Generate at the right end whose glitter runs left along
-   the text. A hint only shows when something blocks. */
+   Enter sends. The text runs the full width; underneath, the options that work here follow as quiet chips, then the
+   mode (Auto, Image, Video) as one PillMenu chip, with a normal-sized Generate at the right end whose glitter runs
+   left along the text. A hint only shows when something blocks. */
 export function CommandBar<T extends string>({ label, value, onChange, placeholder, onSubmit, submitLabel, submitText, submitDisabled, busy, mode, chips, above, hint, inline }: {
   label: string;
   value: string;
@@ -3685,14 +3686,22 @@ export function CommandBar<T extends string>({ label, value, onChange, placehold
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-    setOverflow(el.scrollHeight > el.clientHeight + 1);
+    // Measure again when the width changes (the bar first lays out narrow) and once the fonts have loaded.
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+      setOverflow(el.scrollHeight > el.clientHeight + 1);
+    };
+    fit();
+    const watcher = typeof ResizeObserver !== "undefined" ? new ResizeObserver(fit) : null;
+    watcher?.observe(el);
+    void document.fonts?.ready.then(fit);
+    return () => watcher?.disconnect();
   }, [value]);
   const blocked = !!submitDisabled || !!busy;
+  const current = mode?.items.find((item) => item.id === mode.value) ?? mode?.items[0];
   return (
     <div className={cx("ds-commandbar", inline && "ds-commandbar--inline")} role="search" aria-label={label}>
-      {mode && <SegmentedTabs vertical quiet label={`${label} mode`} value={mode.value} onChange={mode.onChange} items={mode.items} />}
       <div className="ds-commandbar__main">
         <textarea
           ref={box}
@@ -3704,8 +3713,11 @@ export function CommandBar<T extends string>({ label, value, onChange, placehold
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && onSubmit && !blocked) { e.preventDefault(); emitGlitter(go.current?.querySelector("button") ?? null, "left"); onSubmit(); } }}
         />
-        {(chips || onSubmit || overflow) && <div className="ds-commandbar__row">
-          <div className="ds-commandbar__chips">{chips}</div>
+        {(chips || mode || onSubmit || overflow) && <div className="ds-commandbar__row">
+          <div className="ds-commandbar__chips">
+            {chips}
+            {current && mode && <PillMenu name="Mode" align="left" icon={current.icon} label={String(current.label)} value={mode.value} items={mode.items.map((item) => ({ id: item.id, label: String(item.label) }))} onPick={(id) => mode.onChange(id as T)} />}
+          </div>
           {overflow && <IconButton label={`Open ${label} in a larger editor`} onClick={() => setExpanded(true)}><Maximize2 size={14} /></IconButton>}
           {onSubmit && (
             <div className="ds-commandbar__go" ref={go}>

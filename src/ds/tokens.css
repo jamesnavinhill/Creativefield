@@ -59,8 +59,13 @@
   --brand-glow: 0 0 calc(18px * var(--ui-scale)) rgba(253, 209, 0, 0.28);
   --accent-soft: rgba(47, 168, 255, 0.12);
   --accent-ring: rgba(47, 168, 255, 0.55);
-  --accent-glow: 0 0 0 1px rgba(47, 168, 255, 0.45), 0 0 14px rgba(47, 168, 255, 0.35), 0 0 32px rgba(47, 168, 255, 0.18);
-  --accent-glow-strong: 0 0 0 1px rgba(47, 168, 255, 0.8), 0 0 18px rgba(47, 168, 255, 0.55), 0 0 44px rgba(47, 168, 255, 0.3);
+  /* Glows are the second colour: CreativeField yellow-orange (the logo yellow as the ring, a warmer orange as the
+     light around it). Blue stays for text, links, selection rings and focus. */
+  --glow-ring: 253, 209, 0;
+  --glow-light: 255, 170, 0;
+  --glow-border: rgba(var(--glow-ring), 0.6); /* the edge of anything that glows */
+  --accent-glow: 0 0 0 1px rgba(var(--glow-ring), 0.5), 0 0 14px rgba(var(--glow-light), 0.34), 0 0 32px rgba(var(--glow-light), 0.17);
+  --accent-glow-strong: 0 0 0 1px rgba(var(--glow-ring), 0.85), 0 0 18px rgba(var(--glow-light), 0.52), 0 0 44px rgba(var(--glow-light), 0.28);
 
   /* Primary button: dark fill that glows, instead of a bright fill. */
   --button-primary-bg: #171b21;

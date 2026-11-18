@@ -912,7 +912,7 @@ export default function Showcase() {
       </Section>
 
       <Section title="Command bar (the free input, floats at the bottom center)">
-        <Meta>Mode rail, text, quiet chips that work here, and a normal Generate at the right end. It rests at one line and grows to four, then scrolls and offers the larger editor. Type and press Generate or Enter: the glitter runs left along the text. Every primary button and Generate plays it along its own box.</Meta>
+        <Meta>Text across the width, the quiet chips that work here, the mode as one chip, and a normal Generate at the right end. It rests at one line and grows to four, then scrolls and offers the larger editor. Type and press Generate or Enter: the glitter runs left along the text. Every primary button and Generate plays it along its own box.</Meta>
         <CommandBarDemo />
       </Section>
 
