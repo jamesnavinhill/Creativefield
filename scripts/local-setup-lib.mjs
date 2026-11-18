@@ -64,5 +64,5 @@ export function missingEnvKeys(content) {
 // The official Comfy SDK 0.5.0 declares Node >=22.
 export function requireSupportedNode(version=process.versions.node) {
   const major=Number(String(version).split(".")[0]);
-  if(!Number.isInteger(major)||major<22)throw new Error("ComfyField requires Node.js 22 or later (official Comfy SDK requirement).");
+  if(!Number.isInteger(major)||major<22)throw new Error(`CreativeField needs Node.js 22 or newer and this is ${version}. Start it with "Start CreativeField.bat" (it installs the right one), or install the LTS from https://nodejs.org.`);
 }

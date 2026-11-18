@@ -172,7 +172,7 @@ export function workerBlocker(input: {
   /** A hosted guest: their worker is Comfy Cloud, reached by signing in with their own key. */
   guest?: boolean;
   /** What CreativeField can install itself on this computer for this tool (model files and node packs). */
-  install?: { bytes: number; files: number };
+  install?: { bytes: number; files: number; /** Files without a public download. */ manual?: number };
 }): WorkerBlocker | null {
   const { worker, workers, readiness, offlineWorker, starting, settings = "Settings", canRunLocal, guest, install } = input;
   if (starting) return { cause: "starting", title: "ComfyUI is starting", text: "This model runs as soon as ComfyUI answers.", fix: fixFor("start-comfy") };
@@ -189,7 +189,7 @@ export function workerBlocker(input: {
   const missing = readiness.missing ?? [];
   /* Missing files that CreativeField can fetch itself: the one action is Install, with the download size. */
   if (install?.files && missing.length && (state === "install_required" || state === "download_required" || state === "incompatible")) {
-    return { cause: "missing-files", title: "This tool needs more files", text: `This tool needs ${needsText(missing)}. CreativeField can install them into your ComfyUI.`, fix: { kind: "install", label: install.bytes ? `Install · ${(install.bytes / 1e9).toFixed(1)} GB` : "Install" }, details: missing.map(item => `${item.kind} ${item.name}${item.location ? ` (${item.location})` : ""}`).join("\n") };
+    return { cause: "missing-files", title: "This tool needs more files", text: install.manual ? `This tool needs ${needsText(missing)}. CreativeField can install ${install.files} of them into your ComfyUI; Models shows the ${install.manual === 1 ? "one" : install.manual} to add by hand.` : `This tool needs ${needsText(missing)}. CreativeField can install them into your ComfyUI.`, fix: { kind: "install", label: install.bytes ? `Install · ${(install.bytes / 1e9).toFixed(1)} GB` : "Install" }, details: missing.map(item => `${item.kind} ${item.name}${item.location ? ` (${item.location})` : ""}`).join("\n") };
   }
   if ((state === "install_required" || state === "download_required") && missing.length) {
     return { cause: "missing-files", title: "This tool needs more files", text: `This tool needs ${needsText(missing)} before it can run here. Models shows which ones and where they go.`, fix: fixFor("open-models"), details: missing.map(item => `${item.kind} ${item.name}${item.location ? ` (${item.location})` : ""}`).join("\n") };

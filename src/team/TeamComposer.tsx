@@ -193,7 +193,7 @@ export function TeamComposer({manifest:chosenManifest,catalogue,onCapability,use
     try{setInstallJob(await call<InstallJob>(workspacePath(workspace.id,"install"),"POST",{capabilityId:executionManifest.id,workerId:installWorker.id}));}
     catch(e){setError((e as Error).message);}
   }
-  const blocker=workerBlocker({worker,workers,readiness,offlineWorker:sleeping,starting,settings:settingsPlace,canRunLocal:!!onRunLocal,guest:!!user.guest,install:installPlan&&installPlan.files?installPlan:undefined});
+  const blocker=workerBlocker({worker,workers,readiness,offlineWorker:sleeping,starting,settings:settingsPlace,canRunLocal:!!onRunLocal,guest:!!user.guest,install:installPlan&&installPlan.files?{bytes:installPlan.bytes,files:installPlan.files,manual:installPlan.manual.length}:undefined});
   async function startComfy(target=sleeping){
     if(!target)return;
     setStarting(true);setError("");

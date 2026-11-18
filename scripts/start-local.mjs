@@ -122,6 +122,13 @@ async function main() {
   }
 
   if (!existsSync(envPath) || !existsSync(path.join(pgDataDir, "PG_VERSION"))) {
+    // A first setup beside another CreativeField (or any program on the database port) takes the next free port.
+    if (!await portFree(pgPort())) {
+      let free = pgPort() + 1;
+      while (free < pgPort() + 40 && !await portFree(free)) free++;
+      console.log(`[start] Database port ${pgPort()} is in use, so this copy uses ${free}.`);
+      process.env.COMFYFIELD_PG_PORT = String(free);
+    }
     console.log("[start] First run: running automated setup...");
     await run(process.execPath, [path.join(projectRoot, "scripts", "setup-local.mjs")]);
   }
@@ -136,23 +143,40 @@ async function main() {
   const dbMatch = /postgres:\/\/postgres:([^@]+)@/.exec(envValues.DATABASE_URL ?? "");
   if (!dbMatch) throw new Error(`Cannot read the database password from ${envPath}. Restore the matching app.env from a complete backup; keep the existing database and storage intact.`);
   await clearStalePostmaster(pgDataDir);
+  // The database port can be taken by another program (or a second CreativeField folder). Our own database still
+  // running from last time is fine; otherwise move to the next free port for this start.
+  // The port written into app.env at setup is the one this database belongs to.
+  const configuredDbPort = Number(/@[^/]+:(\d+)\//.exec(envValues.DATABASE_URL ?? "")?.[1]) || pgPort();
+  let dbPort = configuredDbPort;
+  const ownDatabaseRunning = existsSync(path.join(pgDataDir, "postmaster.pid"));
+  if (!ownDatabaseRunning && !await portFree(dbPort)) {
+    const wanted = dbPort;
+    for (dbPort = wanted + 1; dbPort < wanted + 40 && !await portFree(dbPort); dbPort++);
+    if (dbPort >= wanted + 40) throw new Error(`The database ports ${wanted} to ${wanted + 40} are all in use. Close other programs or restart the computer, then start again.`);
+    console.log(`[start] Database port ${wanted} is used by another program, so CreativeField uses ${dbPort} this time.`);
+  }
   // The launcher runs pg_ctl detached in its own process group, so a console
   // Ctrl+C meant for another program never reaches the postmaster.
   const pg = await createPersistentPostgres({
     databaseDir: pgDataDir,
     user: "postgres",
     password: decodeURIComponent(dbMatch[1]),
-    port: pgPort(),
+    port: dbPort,
     persistent: true,
   });
-  await pg.start();
+  try { await pg.start(); }
+  catch (error) { throw new Error(`The local database did not start (${error.message}). Restart the computer and start again; your projects are safe in the .comfyfield folder.`); }
   console.log("[start] Local PostgreSQL running.");
 
   // Variables set here win over app.env, so a moved port needs no file change.
   const server = spawn(process.execPath, ["--env-file", envPath, "--import", "tsx", "server/main.ts"], {
     cwd: projectRoot,
     stdio: "inherit",
-    env: serverPort === SERVER_PORT ? process.env : { ...process.env, PORT: String(serverPort), NODE_EDITOR_PORT: String(serverPort + 1), PUBLIC_ORIGIN: `http://127.0.0.1:${serverPort}` },
+    env: {
+      ...process.env,
+      ...(serverPort === SERVER_PORT ? {} : { PORT: String(serverPort), NODE_EDITOR_PORT: String(serverPort + 1), PUBLIC_ORIGIN: `http://127.0.0.1:${serverPort}` }),
+      ...(dbPort === configuredDbPort ? {} : { DATABASE_URL: envValues.DATABASE_URL.replace(/@(127\.0\.0\.1|localhost):\d+\//, `@$1:${dbPort}/`) }),
+    },
   });
 
   let stopping = false;

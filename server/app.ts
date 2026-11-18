@@ -61,6 +61,7 @@ import {replaceClipCheckRoutes} from "./replace-clip-check";
 import {promptExpanderRoutes} from "./prompt-expander";
 import {onboardingRoutes} from "./onboarding";
 import {installRoutes} from "./model-install";
+import {launchInstall, rememberRunning, savedInstall} from "./comfy-install";
 import {h3EditorRoutes} from "./h3-editor";
 import {h3EditorProxyRoutes} from "./h3-proxy";
 import {CLOUD_KEY_REFUSED_REASON,cloudAccountFor} from "./cloud-account";
@@ -212,7 +213,11 @@ export async function buildServer(config: ServerConfig, pool: Pool, dependencies
        places between two visits of the same screen. */
     return (await pool.query("SELECT id,name,origin,kind,enabled,checked_at,inventory FROM workers WHERE workspace_id=$1 ORDER BY name,id", [workspaceId])).rows.map(worker=>{
       const managedFamily=config.localSingleUser&&worker.kind==="local"&&worker.enabled?managedLocalComfyFamily(worker.origin):undefined;
-      return {...worker,can_start:!!managedFamily,...(managedFamily?{managed_family:managedFamily}:{})};
+      /* Also the ComfyUI this person confirmed or connected (any port, Desktop included). */
+      const remembered=config.localSingleUser&&worker.kind==="local"&&worker.enabled&&!!savedInstall(worker.origin);
+      /* The default starter needs a configured folder or script; without one, Start would do nothing. */
+      const configured=managedFamily==="hyperflow"||(managedFamily==="default"&&!!(process.env.COMFY_HOME?.trim()||process.env.COMFYFIELD_COMFY_START_SCRIPT?.trim()));
+      return {...worker,can_start:configured||remembered,...(managedFamily?{managed_family:managedFamily}:{})};
     });
   });
   app.post(`${base}/workers`, async request => {
@@ -246,6 +251,8 @@ export async function buildServer(config: ServerConfig, pool: Pool, dependencies
     const worker = (await pool.query("SELECT * FROM workers WHERE workspace_id=$1 AND id=$2", [workspaceId,id])).rows[0];
     if (!worker) throw new HttpError(404, "Worker not found");
     const inventory=await probeWorker(pool,catalogue,worker);
+    /* A ComfyUI on this computer that answers tells where it lives, so Start works when it is off (self-healing). */
+    if(config.localSingleUser&&worker.kind==="local"&&inventory.online&&managedLocalComfyFamily(worker.origin)!=="hyperflow"&&/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(worker.origin))void rememberRunning(worker.origin);
     /* A cloud worker is judged on the pack's own cloud route when it has one, as the team view
        does, and on its key's plan: an account that may not submit leaves every cloud pack
        unrunnable, so that list says the plan in one sentence instead of a node list. */
@@ -260,6 +267,13 @@ export async function buildServer(config: ServerConfig, pool: Pool, dependencies
     if (!config.localSingleUser) throw new HttpError(403, "Only this computer's local workspace may start ComfyUI.");
     const worker = (await pool.query("SELECT id,origin,kind,enabled,inventory FROM workers WHERE workspace_id=$1 AND id=$2", [workspaceId,id])).rows[0];
     if (!worker) throw new HttpError(404, "Worker not found");
+    /* The remembered install wins unless a start script was configured on purpose. */
+    const remembered = managedLocalComfyFamily(worker.origin) !== "hyperflow" && !process.env.COMFYFIELD_COMFY_START_SCRIPT?.trim() && !process.env.COMFY_HOME?.trim() && !dependencies.localComfyStarter ? savedInstall(worker.origin) : undefined;
+    if (remembered && worker.enabled && worker.kind === "local") {
+      if (worker.inventory?.online === true) return { state: "already_online" };
+      try { launchInstall(remembered.install, worker.origin); } catch (error) { throw new HttpError(503, (error as Error).message); }
+      return { state: "launch_requested" };
+    }
     if (!worker.enabled || worker.kind !== "local" || !managedLocalComfyOrigin(worker.origin)) throw new HttpError(409, "This worker is not the managed local ComfyUI worker. Open worker settings to fix its address.");
     if (worker.inventory?.online === true) return { state: "already_online" };
     try {

@@ -362,7 +362,9 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
     setRunOn(target);
   }
   /* A hosted guest has no worker to add: their worker is Comfy Cloud, reached by signing in. */
-  function openWorkerSettings(){if(hosted){setCloudSignIn(true);return;}setSettings("workers");}
+  /* With no ComfyUI connected on this computer, "Connect ComfyUI" finds and connects it (OnboardingGate); the
+     settings list is for changing a worker that exists. */
+  function openWorkerSettings(){if(hosted){setCloudSignIn(true);return;}if(user.localSingleUser&&workspace.role==="admin"&&!workers.some(w=>w.enabled)){setOnboardingOpen(true);return;}setSettings("workers");}
   function rememberCloudConsent(){try{localStorage.setItem(cloudConsentKey,"yes");}catch{}}
   function useCloud(){rememberCloudConsent();setCloudDialog(null);setRunOn("cloud");}
   function keepRunTarget(){setCloudDialog(null);if(!hosted)setRunOn("local");}
@@ -1108,7 +1110,7 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
           location.hash=action.href;
         }}
         :undefined}
-      end={<><ProblemBar/>{navigation.section==="make"&&<GettingStarted userId={user.id} workspaceId={workspace.id} admin={workspace.role==="admin"} audience={audienceOf(user)} workers={workers} onModels={openModels} onSettings={()=>setSettings("workers")}/>}<OnboardingGate open={onboardingOpen} workspaceId={workspace.id} call={call} onClose={()=>setOnboardingOpen(false)}/></>}
+      end={<><ProblemBar/>{navigation.section==="make"&&<GettingStarted userId={user.id} workspaceId={workspace.id} admin={workspace.role==="admin"} audience={audienceOf(user)} workers={workers} onModels={openModels} onSettings={()=>setSettings("workers")}/>}<OnboardingGate open={onboardingOpen} workspaceId={workspace.id} call={call} onClose={()=>{setOnboardingOpen(false);refresh();}}/></>}
       info={<WorkflowInfoButton/>}
       />}
     {cloudDialog&&<CloudRunDialog kind={cloudDialog} onUse={useCloud} onKeep={keepRunTarget}

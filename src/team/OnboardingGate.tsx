@@ -15,11 +15,13 @@ type OnboardingState = {
 type Worker = {id: string; origin: string};
 
 /* First start asks for one thing: which ComfyUI to use. States (Pad, Current state: onboarding):
-   checking -> connected (a worker is online: closes by itself) | found (ComfyUI answers) | installed (on disk, not
-   running) | missing (nothing found).
-   found -> connecting -> done. installed -> starting (polls every 3 s, up to 2 min) -> connecting -> done, or back to
+   checking -> connected (a worker is online: closes by itself) | found (ComfyUI answers: connects by itself, no
+   question) | installed (on disk, not running) | missing (nothing found).
+   found -> connecting -> done, or found with the reason when it did not answer. installed -> starting (polls every 3 s, up to 2 min) -> connecting -> done, or back to
    installed with the reason. missing -> checking (Check again) or connecting (an address typed in).
-   Every state has a way out: Later closes it; Workspace setup opens the same steps again. */
+   Nothing shows while it checks and connects; the dialog appears only when the person has something to decide
+   (start it, type an address, or read why it failed). Every state has a way out: Later closes it, and the
+   "Connect ComfyUI" action of any tool opens it again. */
 type Phase = "checking" | "connected" | "found" | "installed" | "starting" | "missing" | "connecting";
 
 const START_WAIT_MS = 120_000, POLL_MS = 3_000;
@@ -62,7 +64,9 @@ export function OnboardingGate({open,workspaceId,call,onClose}:{open: boolean; w
       if (next.detected?.length) setAddress(next.detected[0]);
       /* Already connected: nothing to ask, so the first start goes straight to the studio. */
       if (next.system.comfyWorkers.online > 0) { setPhase("connected"); if (!next.completed) await finish(true); return; }
-      setPhase(next.detected?.length ? "found" : next.installs?.length ? "installed" : "missing");
+      /* ComfyUI already answers on this computer: there is nothing to decide, so it connects without a question. */
+      if (next.detected?.length) { await connect(next.detected[0]); return; }
+      setPhase(next.installs?.length ? "installed" : "missing");
     } catch (cause) {
       setError({title: "This computer could not be checked", text: "CreativeField did not answer. Try again in a moment.", details: (cause as Error).message});
       setPhase("missing");
@@ -98,7 +102,8 @@ export function OnboardingGate({open,workspaceId,call,onClose}:{open: boolean; w
       {(phase === "missing" || phase === "installed") && <Button variant="secondary" onClick={() => void check()}>Check again</Button>}
       {primary}</>;
 
-  return <Dialog open={open} title="Connect ComfyUI" onClose={() => void finish(false)} footer={footer}>
+  const asks = phase === "installed" || phase === "starting" || phase === "missing" || !!error;
+  return <Dialog open={open && asks} title="Connect ComfyUI" onClose={() => void finish(false)} footer={footer}>
     {error && <Notice inline priority={10} title={error.title} details={error.details}>{error.text}</Notice>}
     {phase === "checking" && <StatusText tone="active">Looking for ComfyUI on this computer…</StatusText>}
     {phase === "connected" && <StatusText tone="ok">ComfyUI is connected{state?.system.comfyWorkers.names.length ? ` (${state.system.comfyWorkers.names.join(", ")})` : ""}. Its models appear under Models.</StatusText>}

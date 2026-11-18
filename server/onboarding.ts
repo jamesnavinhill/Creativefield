@@ -4,10 +4,8 @@ import {z} from "zod";
 import path from "node:path";
 import {access, mkdir, stat} from "node:fs/promises";
 import {constants} from "node:fs";
-import {spawn} from "node:child_process";
 import {HttpError, member} from "./auth";
-// @ts-expect-error plain ESM helper shared with scripts/start-local.mjs
-import {findComfyInstalls} from "../scripts/find-comfy.mjs";
+import {comfyInstalls, launchInstall, rememberInstall, rememberRunning} from "./comfy-install";
 import {storageVolume} from "./setup-storage";
 import type {ServerConfig} from "./config";
 
@@ -49,22 +47,6 @@ async function folderState(directory: string | null, fallback: string) {
  *  offer "Use this ComfyUI" instead of asking for an address. Only the local single-user app looks. */
 const LOCAL_COMFY = ["http://127.0.0.1:8188", "http://127.0.0.1:8000", "http://127.0.0.1:8189", "http://127.0.0.1:8190"];
 
-type ComfyInstall = {kind: "portable"; home: string; python: string; main: string} | {kind: "desktop"; home: string; exe: string};
-/** The installs found on disk; searched once per minute at most, since it walks folders. */
-let installCache: {at: number; installs: ComfyInstall[]} | undefined;
-function comfyInstalls(): ComfyInstall[] {
-  if (!installCache || Date.now() - installCache.at > 60_000) installCache = {at: Date.now(), installs: findComfyInstalls({root: process.cwd()}) as ComfyInstall[]};
-  return installCache.installs;
-}
-
-/** Starts a found install in its own window, as its own start file would. */
-function launch(install: ComfyInstall) {
-  const child = install.kind === "portable"
-    ? spawn(install.python, ["-s", install.main, "--windows-standalone-build", "--listen", "127.0.0.1", "--port", "8188"], {cwd: install.home, detached: true, stdio: "ignore", windowsHide: false})
-    : spawn(install.exe, [], {cwd: install.home, detached: true, stdio: "ignore", windowsHide: false});
-  child.on("error", () => { /* reported by the client's poll timing out */ });
-  child.unref();
-}
 async function detectLocalComfy(known: string[]) {
   const found = await Promise.all(LOCAL_COMFY.filter(origin => !known.includes(origin)).map(async origin => {
     try {
@@ -119,10 +101,12 @@ export async function onboardingRoutes(app: FastifyInstance, pool: Pool, config:
     /* The person confirms the exact folder shown in the dialog; it is searched again now (no cache) and started only
        when that same folder is still a ComfyUI install, so a folder planted later is never run unseen. */
     const {home} = z.object({home: z.string().min(3).max(1000)}).strict().parse(request.body ?? {});
-    installCache = undefined;
-    const install = comfyInstalls().find(found => path.resolve(found.home).toLowerCase() === path.resolve(home).toLowerCase());
+    const install = comfyInstalls(true).find(found => path.resolve(found.home).toLowerCase() === path.resolve(home).toLowerCase());
     if (!install) throw new HttpError(409, "That ComfyUI folder was not found again. Check again, then confirm the folder shown.");
-    launch(install);
+    /* Desktop answers on 8000, a portable or manual install on 8188. Confirmed here, so Start works later too. */
+    const origin = install.kind === "desktop" ? "http://127.0.0.1:8000" : "http://127.0.0.1:8188";
+    try { launchInstall(install, origin); } catch (error) { throw new HttpError(409, (error as Error).message); }
+    await rememberInstall(origin, install);
     return {state: "starting", kind: install.kind, home: install.home};
   });
 
@@ -157,6 +141,11 @@ export async function onboardingRoutes(app: FastifyInstance, pool: Pool, config:
        ON CONFLICT(workspace_id) DO UPDATE SET models_directory=EXCLUDED.models_directory,completed=EXCLUDED.completed,dismissed=EXCLUDED.dismissed,updated_at=now()`,
       [workspaceId, modelsDirectory, completed, dismissed],
     );
+    /* A connected ComfyUI on this computer tells where it lives, so "Start ComfyUI" works on the next day. */
+    if (completed && config.localSingleUser) {
+      const local = (await pool.query("SELECT origin FROM workers WHERE workspace_id=$1 AND enabled AND kind='local'", [workspaceId])).rows as Array<{origin: string}>;
+      for (const worker of local) if (/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(worker.origin)) await rememberRunning(worker.origin);
+    }
     return {...await read(workspaceId), savedBy: user.id};
   });
 }

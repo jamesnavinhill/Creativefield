@@ -5,6 +5,15 @@ rem Self-healing: a missing or too old Node.js is installed by itself (winget, o
 cd /d "%~dp0"
 title CreativeField
 
+rem Started from inside the ZIP without extracting: Windows runs this file alone from a temporary folder.
+if not exist "package.json" (
+  echo.
+  echo CreativeField is still inside the ZIP file.
+  echo Right-click the ZIP, choose "Extract All", open the new folder and double-click this file there.
+  pause
+  exit /b 1
+)
+
 rem A private Node.js copy from an earlier start comes first.
 if exist ".comfyfield\node\node.exe" set "PATH=%CD%\.comfyfield\node;%PATH%"
 

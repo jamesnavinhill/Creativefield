@@ -70,7 +70,7 @@ export function installPlan(bundle: CapabilityBundle, inventory: WorkerInventory
 }
 
 /** ComfyUI's own folder list, and the ComfyUI folder that holds custom_nodes. */
-async function comfyFolders(origin: string) {
+export async function comfyFolders(origin: string) {
   const response = await fetch(`${origin}/internal/folder_paths`, {signal: AbortSignal.timeout(5000)});
   if (!response.ok) throw new Error("ComfyUI did not list its folders. Update ComfyUI, then try again.");
   const folders = await response.json() as Record<string, string[] | [string[], unknown]>;
@@ -80,7 +80,7 @@ async function comfyFolders(origin: string) {
 }
 
 /** The Python that runs this ComfyUI: portable (python_embeded beside it), Desktop or manual (.venv / venv). */
-function comfyPython(base: string) {
+export function comfyPython(base: string) {
   return [path.join(base, "..", "python_embeded", "python.exe"), path.join(base, ".venv", "Scripts", "python.exe"), path.join(base, "venv", "Scripts", "python.exe"), path.join(base, ".venv", "bin", "python")]
     .find(candidate => existsSync(candidate));
 }
@@ -140,7 +140,7 @@ export async function download(item: InstallItem, dest: string, signal: AbortSig
 }
 
 /** Clones a node pack into custom_nodes and installs its Python requirements with ComfyUI's own Python. */
-async function installNodePack(item: InstallItem, customNodes: string, python: string | undefined) {
+export async function installNodePack(item: InstallItem, customNodes: string, python: string | undefined) {
   const dir = path.join(customNodes, item.name);
   if (!existsSync(dir)) {
     try { await run("git", ["clone", "--depth", "1", item.repo!, dir], {timeout: 10 * 60_000}); }
@@ -154,7 +154,7 @@ async function installNodePack(item: InstallItem, customNodes: string, python: s
 }
 
 /** Restarts ComfyUI with exactly the command line it runs with now, so the person's own start options stay. */
-async function restartComfy(origin: string, base: string) {
+export async function restartComfy(origin: string, base: string) {
   if (process.platform !== "win32") throw new Error("Restart ComfyUI yourself to load the new nodes.");
   const port = new URL(origin).port || "80";
   const script = `$c = Get-NetTCPConnection -LocalPort ${Number(port)} -State Listen -ErrorAction Stop | Select-Object -First 1;
