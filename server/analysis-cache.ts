@@ -21,6 +21,7 @@ import {
   type AnalysisTimings,
   type ClipFacts,
   type PendingStages,
+  type SceneContext,
   type ShotDecision,
   type ShotGeometry,
   type ShotSkip,
@@ -33,6 +34,7 @@ export type AnalysisStages = {
   cuts?: boolean;
   keyframes?: boolean;
   decisions?: boolean;
+  scene?: boolean;
   geometry?: boolean;
   score?: boolean;
 };
@@ -43,6 +45,8 @@ export type StoredAnalysis = {
   params: AnalysisParams | null;
   shots: AnalysisShot[];
   decisions: ShotDecision[];
+  /** The whole-clip scene description ( TASK-A), or null before the vision pass ran. */
+  scene: SceneContext | null;
   geometries: ShotGeometry[];
   skips: ShotSkip[];
   scoreYaml: string;
@@ -59,6 +63,7 @@ export type AnalysisCachePatch = {
   params?: AnalysisParams | null;
   shots?: AnalysisShot[];
   decisions?: ShotDecision[];
+  scene?: SceneContext | null;
   geometries?: ShotGeometry[];
   skips?: ShotSkip[];
   scoreYaml?: string;
@@ -68,7 +73,7 @@ export type AnalysisCachePatch = {
   timings?: Partial<AnalysisTimings>;
 };
 
-const COLUMNS = "cache_key, clip, params, shots, decisions, geometries, skips, score_yaml, score_hash, statuses, stages, timings, updated_at";
+const COLUMNS = "cache_key, clip, params, shots, decisions, scene, geometries, skips, score_yaml, score_hash, statuses, stages, timings, updated_at";
 
 function objects<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
@@ -87,6 +92,7 @@ export function rowToStoredAnalysis(row: Record<string, unknown>): StoredAnalysi
     params: object<AnalysisParams>(row.params),
     shots: objects<AnalysisShot>(row.shots),
     decisions: objects<ShotDecision>(row.decisions),
+    scene: object<SceneContext>(row.scene),
     geometries: objects<ShotGeometry>(row.geometries),
     skips: objects<ShotSkip>(row.skips),
     scoreYaml: typeof row.score_yaml === "string" ? row.score_yaml : "",
@@ -120,6 +126,7 @@ export function mergeAnalysisCache(existing: StoredAnalysis | null, cacheKey: st
     params: null,
     shots: [],
     decisions: [],
+    scene: null,
     geometries: [],
     skips: [],
     scoreYaml: "",
@@ -136,6 +143,7 @@ export function mergeAnalysisCache(existing: StoredAnalysis | null, cacheKey: st
   const shots = patch.shots?.length ? patch.shots : base.shots;
   const statuses = patch.statuses?.length ? patch.statuses : base.statuses;
   const decisions = mergeByShotIndex(base.decisions, patch.decisions);
+  const scene = patch.scene !== undefined ? patch.scene : base.scene;
   const geometries = mergeByShotIndex(base.geometries, patch.geometries);
   const skips = mergeByShotIndex(base.skips, patch.skips);
   return {
@@ -144,6 +152,7 @@ export function mergeAnalysisCache(existing: StoredAnalysis | null, cacheKey: st
     params: patch.params !== undefined ? patch.params : base.params,
     shots,
     decisions,
+    scene,
     geometries,
     skips,
     scoreYaml,
@@ -216,13 +225,14 @@ export async function upsertAnalysisCache(pool: Pool, workspaceId: string, cache
   const json = (value: unknown) => (value === null || value === undefined ? null : JSON.stringify(value));
   await pool.query(
     `INSERT INTO reference_analysis_cache
-       (workspace_id, cache_key, clip, params, shots, decisions, geometries, skips, score_yaml, score_hash, statuses, stages, timings, updated_at)
-     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11::jsonb, $12::jsonb, $13::jsonb, now())
+       (workspace_id, cache_key, clip, params, shots, decisions, scene, geometries, skips, score_yaml, score_hash, statuses, stages, timings, updated_at)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, $12::jsonb, $13::jsonb, $14::jsonb, now())
      ON CONFLICT (workspace_id, cache_key) DO UPDATE SET
        clip = EXCLUDED.clip,
        params = EXCLUDED.params,
        shots = EXCLUDED.shots,
        decisions = EXCLUDED.decisions,
+       scene = EXCLUDED.scene,
        geometries = EXCLUDED.geometries,
        skips = EXCLUDED.skips,
        score_yaml = EXCLUDED.score_yaml,
@@ -238,6 +248,7 @@ export async function upsertAnalysisCache(pool: Pool, workspaceId: string, cache
       json(merged.params),
       json(merged.shots),
       json(merged.decisions),
+      json(merged.scene),
       json(merged.geometries),
       json(merged.skips),
       merged.scoreYaml,

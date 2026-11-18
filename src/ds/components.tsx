@@ -309,6 +309,7 @@ export function SegmentedTabs<T extends string>({
   quiet,
   block,
   large,
+  vertical,
 }: {
   items: TabItem<T>[];
   value: T;
@@ -319,9 +320,11 @@ export function SegmentedTabs<T extends string>({
   block?: boolean;
   /** Page-level filters: bigger targets and text. */
   large?: boolean;
+  /** A rail at the side of a bar (the CommandBar's Image / Video): items stack, icon above the word. */
+  vertical?: boolean;
 }) {
   return (
-    <div className={cx("ds-seg", quiet && "ds-seg--quiet", block && "ds-seg--block", large && "ds-seg--large")} role="tablist" aria-label={label}>
+    <div className={cx("ds-seg", quiet && "ds-seg--quiet", block && "ds-seg--block", large && "ds-seg--large", vertical && "ds-seg--vertical")} role="tablist" aria-label={label} aria-orientation={vertical ? "vertical" : undefined}>
       {items.map((t) => (
         <button
           key={t.id}
@@ -1104,11 +1107,112 @@ export function Params({ children }: { children: ReactNode }) {
 
 /* ── Generate button ────────────────────────────────────────── */
 
+/* Glitter: pressing a main action sends a dot-matrix trail from the button along the box it sits in: left along a
+   bar (the CommandBar), up a side panel (a panel's Generate at its foot). Sparks leave the button's edge, light the
+   dots they cross, and the trail twinkles out in about a second. Canvas only, in the accent; nothing with reduced
+   motion. "auto" picks the side of the button with the most room inside its box. */
+export type GlitterDirection = "auto" | "left" | "up";
+const GLITTER_HOSTS = ".ds-commandbar, .ds-panel, .ds-dock, .ds-dialog, .ds-toolbar, .ds-block, aside, section, main";
+function emitGlitter(button: HTMLElement | null, direction: GlitterDirection = "auto") {
+  if (!button || typeof window === "undefined" || typeof document === "undefined") return;
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const box = button.getBoundingClientRect();
+  if (!box.width || !box.height) return;
+  const host = (button.parentElement?.closest(GLITTER_HOSTS) as HTMLElement | null)?.getBoundingClientRect()
+    ?? { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  const styles = getComputedStyle(button);
+  const accent = styles.getPropertyValue("--accent").trim() || "currentColor";
+  const core = styles.getPropertyValue("--text-primary").trim() || accent;
+  const scale = parseFloat(styles.getPropertyValue("--ui-scale")) || 1;
+  const gap = 4 * scale, pad = 56 * scale, maxReach = 760 * scale;
+  const roomLeft = box.left - host.left - gap, roomUp = box.top - host.top - gap;
+  const leftward = (direction === "auto" ? (roomLeft >= roomUp ? "left" : "up") : direction) === "left";
+  // With too little room inside its box, the trail runs past it for a short, fixed length.
+  const room = leftward ? roomLeft : roomUp;
+  const length = Math.min(room > 40 * scale ? room : 220 * scale, maxReach);
+  // The trail is as wide as the button's side of the box, at most a little wider than the button.
+  const c0 = leftward ? Math.max(host.top, box.top - pad) : Math.max(host.left, box.left - pad);
+  const c1 = leftward ? Math.min(host.bottom, box.bottom + pad) : Math.min(host.right, box.right + pad);
+  const span0 = leftward ? box.top : box.left, span1 = leftward ? box.bottom : box.right;
+  const start = (leftward ? box.left : box.top) - gap;
+  const rect = leftward
+    ? { left: start - length, top: c0, width: length, height: c1 - c0 }
+    : { left: c0, top: start - length, width: c1 - c0, height: length };
+  if (rect.width < 4 || rect.height < 4) return;
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const canvas = document.createElement("canvas");
+  canvas.className = "ds-glitter";
+  canvas.setAttribute("aria-hidden", "true");
+  Object.assign(canvas.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+  canvas.width = Math.round(rect.width * ratio);
+  canvas.height = Math.round(rect.height * ratio);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.scale(ratio, ratio);
+  document.body.appendChild(canvas);
+  const step = 7 * scale;
+  const cols = Math.floor(rect.width / step), rows = Math.floor(rect.height / step);
+  const ox = (rect.width - (cols - 1) * step) / 2, oy = (rect.height - (rows - 1) * step) / 2;
+  // u: distance from the button along the trail; side: 1 beside the button's own span, fading to 0 past it.
+  const dots: Array<{ x: number; y: number; u: number; side: number; seed: number; phase: number }> = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const x = ox + c * step, y = oy + r * step;
+    const cross = leftward ? rect.top + y : rect.left + x;
+    const off = Math.max(span0 - cross, 0, cross - span1);
+    dots.push({ x, y, u: leftward ? rect.width - x : rect.height - y, side: Math.max(0, 1 - off / pad), seed: Math.random(), phase: Math.random() * Math.PI * 2 });
+  }
+  // Sparks start at the button's edge and run along the trail, a little scattered across it.
+  const sparks = Array.from({ length: 56 }, () => ({
+    across: span0 + Math.random() * (span1 - span0) - (leftward ? rect.top : rect.left),
+    drift: (Math.random() - 0.5) * pad * 0.9, speed: 0.55 + Math.random() * 0.6, born: Math.random() * 0.35, life: 0.35 + Math.random() * 0.4,
+  }));
+  const duration = Math.min(1500, 800 + length * 0.9), began = performance.now();
+  const smooth = (a: number, b: number, v: number) => { const k = Math.min(1, Math.max(0, (v - a) / (b - a))); return k * k * (3 - 2 * k); };
+  const frame = (now: number) => {
+    const t = Math.min(1, (now - began) / duration);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    const front = length * (1 - Math.pow(1 - t, 2.4)) * 1.04, fade = 1 - smooth(0.55, 1, t);
+    const lit = new Map<number, number>();
+    for (const s of sparks) {
+      const age = (t - s.born) / s.life;
+      if (age < 0 || age > 1) continue;
+      const travel = (1 - Math.pow(1 - age, 2)) * length * s.speed;
+      const along = (leftward ? rect.width : rect.height) - travel, across = s.across + s.drift * age;
+      const c = Math.round(((leftward ? along : across) - ox) / step), r = Math.round(((leftward ? across : along) - oy) / step);
+      if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
+      const key = r * cols + c;
+      lit.set(key, Math.max(lit.get(key) ?? 0, 1 - age));
+    }
+    for (let i = 0; i < dots.length; i++) {
+      const dot = dots[i];
+      if (dot.side <= 0) continue;
+      const near = Math.pow(Math.max(0, 1 - dot.u / length), 0.7) * dot.side;
+      const base = dot.u < front ? 0.16 * near * fade : 0;
+      const wave = dot.seed < 0.6 ? Math.exp(-(((dot.u - front) / (step * 3)) ** 2)) * near * fade : 0;
+      const twinkle = dot.u < front && dot.seed > 0.72 ? (0.5 + 0.5 * Math.sin(dot.phase + t * 42)) * 0.85 * near * fade : 0;
+      const a = Math.min(1, base + wave + twinkle + (lit.get(i) ?? 0) * dot.side);
+      if (a < 0.02) continue;
+      const size = (1.2 + a * 1.8) * scale;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = accent;
+      ctx.fillRect(dot.x - size / 2, dot.y - size / 2, size, size);
+      if (a > 0.7) { ctx.globalAlpha = (a - 0.7) * 2.4; ctx.fillStyle = core; ctx.fillRect(dot.x - scale / 2, dot.y - scale / 2, scale, scale); }
+    }
+    if (t < 1) requestAnimationFrame(frame);
+    else canvas.remove();
+  };
+  requestAnimationFrame(frame);
+}
+
 export function GenerateButton({
   busy,
   label,
   disabledReason,
   estimate,
+  inline,
+  glitter = "auto",
+  onClick,
+  className,
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   busy?: boolean;
@@ -1116,16 +1220,20 @@ export function GenerateButton({
   disabledReason?:string;
   /** How long this usually takes here ("~9 min"), set small after the word while it is idle. */
   estimate?:ReactNode;
+  /** A normal-sized rectangle that hugs its word (the CommandBar's Generate) instead of a panel-wide bar. */
+  inline?: boolean;
+  /** Where the glitter trail runs when pressed; "auto" follows the box the button sits in. */
+  glitter?: GlitterDirection | false;
 }) {
+  // The main action says why it cannot run in plain view, never only on hover.
+  const off=rest.disabled||rest["aria-disabled"]===true||rest["aria-disabled"]==="true";
   const button=(
-    <button type="button" className="ds-generate" {...rest}>
+    <button type="button" className={cx("ds-generate", inline && "ds-generate--inline", className)} {...rest} onClick={(event)=>{if(glitter&&!off&&!busy)emitGlitter(event.currentTarget,glitter);onClick?.(event);}}>
       {busy ? <SparkleLoader size="sm" /> : <Sparkles size={14} />}
       {busy ? <ShimmerText>{label ?? "Generating"}</ShimmerText> : (label ?? "Generate")}
       {!busy && estimate && <span className="ds-generate__estimate">{estimate}</span>}
     </button>
   );
-  // The main action says why it cannot run in plain view, never only on hover.
-  const off=rest.disabled||rest["aria-disabled"]===true||rest["aria-disabled"]==="true";
   return off&&disabledReason&&!busy?<span className="ds-generate-wrap">{button}<span className="ds-generate__reason">{disabledReason}</span></span>:button;
 }
 
@@ -1135,9 +1243,16 @@ export function Button({
   variant = "secondary",
   buttonRef,
   disabledReason,
+  glitter,
+  onClick,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "surface" | "accent" | "ghost" | "brand";buttonRef?:RefObject<HTMLButtonElement>;disabledReason?:string }) {
-  const button=<button type="button" ref={buttonRef} {...rest} className={cx("ds-btn", `ds-btn--${variant}`, rest.className)} />;
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "surface" | "accent" | "ghost" | "brand";buttonRef?:RefObject<HTMLButtonElement>;disabledReason?:string;
+  /** The main action's glitter trail, on by default for primary. A primary inside a dialog stays quiet unless set:
+      the dialog usually closes on that click and the trail would hang over the page. */
+  glitter?: GlitterDirection | false }) {
+  const trail=glitter??(variant==="primary"?"auto":false);
+  const off=rest.disabled||rest["aria-disabled"]===true||rest["aria-disabled"]==="true";
+  const button=<button type="button" ref={buttonRef} {...rest} onClick={(event)=>{if(trail&&!off&&(glitter||!event.currentTarget.closest(".ds-dialog")))emitGlitter(event.currentTarget,trail);onClick?.(event);}} className={cx("ds-btn", `ds-btn--${variant}`, rest.className)} />;
   return rest.disabled&&disabledReason?<Tooltip content={disabledReason} focusable>{button}</Tooltip>:button;
 }
 
@@ -3539,49 +3654,71 @@ export function MediaViewer({ open, src, name, onClose, actions, onActivate, med
   );
 }
 
-/* CommandBar: one line to say what you want. It floats at the top center above the page, grows while you type,
-   Enter sends, and the mode (Auto, Image, Video) sits inside it. A hint only shows when something blocks. */
-export function CommandBar<T extends string>({ label, value, onChange, placeholder, onSubmit, submitLabel, submitDisabled, busy, mode, hint }: {
+/* CommandBar: one card to say what you want. It floats at the bottom center above the page and grows while you type;
+   Enter sends. The mode (Auto, Image, Video) is a rail on its left and the text sits on top; underneath, the options
+   that work here follow as quiet chips, with a normal-sized Generate at the right end whose glitter runs left along
+   the text. A hint only shows when something blocks. */
+export function CommandBar<T extends string>({ label, value, onChange, placeholder, onSubmit, submitLabel, submitText, submitDisabled, busy, mode, chips, above, hint, inline }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   onSubmit?: () => void;
+  /** The full action ("Open Image with reference"); the button's accessible name and tooltip. */
   submitLabel?: string;
+  /** The short word on the button ("Generate"); defaults to submitLabel. */
+  submitText?: ReactNode;
   submitDisabled?: boolean;
   busy?: boolean;
-  mode?: { value: T; onChange: (v: T) => void; items: Array<{ id: T; label: string }> };
+  mode?: { value: T; onChange: (v: T) => void; items: TabItem<T>[] };
+  /** Quiet chips under the text (`Pill quiet`): only options that work here (rule 26). */
+  chips?: ReactNode;
+  /** Sits centred just above the card and rides up as the text grows (the chosen reference). */
+  above?: ReactNode;
   hint?: string;
+  /** Sits in the flow instead of floating (the /#ds showcase). */
+  inline?: boolean;
 }) {
-  const box = useRef<HTMLTextAreaElement>(null);
+  const box = useRef<HTMLTextAreaElement>(null), go = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState(false), [expanded, setExpanded] = useState(false);
+  // Rests at one line; grows with the text up to four lines (the CSS max-height), then scrolls and offers the modal (rule 25).
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
+    el.style.height = `${el.scrollHeight}px`;
+    setOverflow(el.scrollHeight > el.clientHeight + 1);
   }, [value]);
+  const blocked = !!submitDisabled || !!busy;
   return (
-    <div className="ds-commandbar" role="search" aria-label={label}>
-      <span className="ds-commandbar__icon" aria-hidden><Sparkles size={16} /></span>
-      <textarea
-        ref={box}
-        className="ds-commandbar__input"
-        rows={1}
-        aria-label={label}
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && onSubmit && !submitDisabled && !busy) { e.preventDefault(); onSubmit(); } }}
-      />
-      {mode && (
-        <SegmentedTabs quiet label={`${label} mode`} value={mode.value} onChange={mode.onChange} items={mode.items} />
-      )}
-      {onSubmit && (
-        <button type="button" className="ds-commandbar__go" aria-label={submitLabel ?? "Send"} title={submitLabel} disabled={submitDisabled || busy} data-busy={busy || undefined} onClick={onSubmit}>
-          <ArrowRight size={16} />
-        </button>
-      )}
+    <div className={cx("ds-commandbar", inline && "ds-commandbar--inline")} role="search" aria-label={label}>
+      {mode && <SegmentedTabs vertical quiet label={`${label} mode`} value={mode.value} onChange={mode.onChange} items={mode.items} />}
+      <div className="ds-commandbar__main">
+        <textarea
+          ref={box}
+          className="ds-commandbar__input"
+          rows={1}
+          aria-label={label}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && onSubmit && !blocked) { e.preventDefault(); emitGlitter(go.current?.querySelector("button") ?? null, "left"); onSubmit(); } }}
+        />
+        {(chips || onSubmit || overflow) && <div className="ds-commandbar__row">
+          <div className="ds-commandbar__chips">{chips}</div>
+          {overflow && <IconButton label={`Open ${label} in a larger editor`} onClick={() => setExpanded(true)}><Maximize2 size={14} /></IconButton>}
+          {onSubmit && (
+            <div className="ds-commandbar__go" ref={go}>
+              <GenerateButton inline glitter="left" busy={busy} disabled={blocked} aria-label={busy ? undefined : submitLabel} title={submitLabel} label={busy ? undefined : submitText ?? submitLabel} onClick={onSubmit} />
+            </div>
+          )}
+        </div>}
+      </div>
+      {above && <div className="ds-commandbar__above">{above}</div>}
       {hint && <span className="ds-commandbar__hint">{hint}</span>}
+      <Dialog open={expanded} title={label} onClose={() => setExpanded(false)} footer={<Button variant="primary" onClick={() => setExpanded(false)}>Done</Button>}>
+        <textarea className="ds-prompt__modal" autoFocus value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} aria-label={label} />
+      </Dialog>
     </div>
   );
 }

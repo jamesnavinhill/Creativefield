@@ -7,6 +7,7 @@ import {scanReferenceClip} from "./analysis-client";
 import {shotBatches,type AnalysisScan,type ShotDecision} from "./analysis-contract";
 import {shotBrief} from "./shot-brief";
 import {decideShotsWithVision} from "./decision";
+import {describeScene,sceneFrames,sceneLine} from "./scene-context";
 import {evaluateFrame} from "./score/evaluate";
 import {parseStageScore} from "./score/parse";
 import {synthesizeMeasuredPlan} from "./geometry-synthesis";
@@ -42,7 +43,8 @@ const takeOf=(clip:H3Clip)=>clip.takes?.find(take=>take.id===clip.active)??clip.
 const shotWords=(scan:AnalysisScan)=>{
   const lines=[`Reference analysis: ${scan.shots.length} shot${scan.shots.length===1?"":"s"}, ${scan.clip.durationSec.toFixed(1)} s.`];
   for(const decision of scan.decisions){
-    lines.push(`Shot ${decision.shotIndex+1}: ${decision.people} ${decision.people===1?"person":"people"}, ${decision.size} shot, ${decision.motion} camera.`);
+    const described=scan.scene?.shots.find(shot=>shot.shotIndex===decision.shotIndex)?.description;
+    lines.push(`Shot ${decision.shotIndex+1}: ${decision.people} ${decision.people===1?"person":"people"}, ${decision.size} shot, ${decision.motion} camera.${described?` ${described}`:""}`);
   }
   for(const geometry of scan.geometries){
     if(geometry.quality==="estimated")continue;
@@ -143,8 +145,9 @@ export function H3FilmStudio({workspace,project,call,canCreate,onOpenShotGenerat
   },[scan]);
   const briefLines=useMemo(()=>{
     if(!scan)return [];
-    if(briefs?.length)return briefs.map(entry=>[`Shot ${entry.shotNumber}: ${entry.label}`, `${entry.brief.camera.move}; ${Math.round(entry.brief.camera.lensMm)} mm; ${entry.brief.camera.angle}.`, ...entry.brief.subjects.map(subject=>`${subject.label}: ${subject.side}, ${subject.framing}, ${subject.action}.`)].join("\n"));
-    return [shotWords(scan)];
+    const sceneHead=scan.scene?[sceneLine(scan.scene)]:[];
+    if(briefs?.length)return [...sceneHead,...briefs.map(entry=>[`Shot ${entry.shotNumber}: ${entry.label}`, `${entry.brief.camera.move}; ${Math.round(entry.brief.camera.lensMm)} mm; ${entry.brief.camera.angle}.`, ...entry.brief.subjects.map(subject=>`${subject.label}: ${subject.side}, ${subject.framing}, ${subject.action}.`)].join("\n"))];
+    return [...sceneHead,shotWords(scan)];
   },[scan,briefs]);
   const blockingScore=useMemo(()=>{
     if(!scan||!scan.decisions.length)return null;
@@ -218,6 +221,11 @@ export function H3FilmStudio({workspace,project,call,canCreate,onOpenShotGenerat
   /** The vision pass over a fresh scan: one decision per shot (people, size, motion), in batches. */
   async function readShots(result:AnalysisScan){
     setScan(result);
+    if(!result.scene){
+      setAnalysisStage("Describing the scene");
+      const scene=await describeScene(workspace.id,result.cacheKey,sceneFrames(result));
+      if(scene)setScan(current=>current?{...current,scene}:current);
+    }
     if(result.pending.decisions){
       setAnalysisStage("Reading the shots");
       let decisions:ShotDecision[]=[...result.decisions];

@@ -63,6 +63,17 @@ async function main() {
     await run(process.execPath, [path.join(projectRoot, "scripts", "setup-local.mjs")]);
   }
 
+  // A source download (GitHub ZIP or clone) has no built app yet: install and build once, so nobody
+  // has to run npm install / npm run build by hand (GitHub issue #1: ENOENT on dist/index.html).
+  if (!existsSync(path.join(projectRoot, "node_modules"))) {
+    console.log("[start] First start: installing CreativeField. This takes a few minutes...");
+    await run("npm", ["install"]);
+  }
+  if (!existsSync(path.join(projectRoot, "dist", "index.html"))) {
+    console.log("[start] First start: building the app. This takes a minute or two...");
+    await run("npm", ["run", "build"]);
+  }
+
   const envValues = parseEnvContent(await readFile(envPath, "utf8"));
   const dbMatch = /postgres:\/\/postgres:([^@]+)@/.exec(envValues.DATABASE_URL ?? "");
   if (!dbMatch) throw new Error(`Cannot read the database password from ${envPath}. Restore the matching app.env from a complete backup; keep the existing database and storage intact.`);

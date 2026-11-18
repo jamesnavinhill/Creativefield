@@ -35,7 +35,7 @@ import {referenceDescribeRoutes} from "./reference-describe";
 import {referenceAnalysisRoutes} from "./reference-analysis";
 import {referenceShotsRoutes} from "./reference-shots";
 import {blockoutClipRoutes} from "./blockout-clips";
-import {decisionRoutes} from "./decision";
+import {decisionRoutes, sceneRoutes} from "./decision";
 import {referenceStagingRoutes} from "./reference-staging";
 import {referenceInspectionRoutes} from "./comfy-editor";
 import {replaceAnchorRoutes} from "./replace-anchors";
@@ -414,6 +414,7 @@ export async function buildServer(config: ServerConfig, pool: Pool, dependencies
   await referenceShotsRoutes(app,pool);
   await blockoutClipRoutes(app,pool,store);
   await decisionRoutes(app,pool);
+  await sceneRoutes(app,pool);
   await referenceStagingRoutes(app,pool);
   await referenceInspectionRoutes(app,pool);
   await replaceAnchorRoutes(app,pool,store,catalogue);

@@ -568,6 +568,7 @@ function scanFromStored(stored: StoredAnalysis, timings: AnalysisTimings, cache:
     shots: stored.shots,
     statuses: stored.statuses.length === stored.shots.length ? stored.statuses : initialShotStatuses(stored.shots.length),
     decisions: stored.decisions,
+    scene: stored.scene,
     geometries: stored.geometries,
     skips: stored.skips,
     scoreYaml,
@@ -769,14 +770,14 @@ export async function measureCachedGeometry(input: {cacheKey: string; cached: St
       stillsInput.push({shotIndex: shot.index, stills: stills.map((still) => ({timeSec: still.timeSec, role: still.role, path: still.path}))});
     }
     if (runShots.length) {
-      output = await runner({cacheKey: input.cacheKey, clip, shots: runShots, artifacts: {geometryProxy: "", dir}, params, stills: stillsInput});
+      output = await runner({cacheKey: input.cacheKey, clip, shots: runShots, artifacts: {geometryProxy: "", dir}, params, stills: stillsInput, scene: cached.scene ?? undefined});
     } else {
       output = {geometries: [], errors: [], timings: {batchMs: Date.now() - startedAt, modelMs: 0}};
     }
   } else {
     const artifacts = await presentAnalysisArtifacts(clip.sha256, cached.params);
     if (!artifacts) throw new HttpError(409, "The cached clip proxies are missing on this server. Scan the clip again.");
-    output = await runner({cacheKey: input.cacheKey, clip, shots, artifacts: {geometryProxy: artifacts.geometryProxy, dir: artifacts.dir}, params});
+    output = await runner({cacheKey: input.cacheKey, clip, shots, artifacts: {geometryProxy: artifacts.geometryProxy, dir: artifacts.dir}, params, scene: cached.scene ?? undefined});
   }
   const errors = [...output.errors.filter((entry) => missingSet.has(entry.shotIndex)), ...perShotErrors];
   const finalGeometries = new Map(known);

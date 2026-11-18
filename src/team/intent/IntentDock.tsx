@@ -1,5 +1,6 @@
 import {useState,type DragEvent} from "react";
-import {ASSET_DRAG,CommandBar,Thumb} from "../../ds";
+import {Image as ImageIcon,Plus,Sparkles,Video} from "lucide-react";
+import {ASSET_DRAG,CommandBar,Pill,Thumb,chooseDeviceFiles} from "../../ds";
 import {contextualIntent,intentLabel,type IntentOverride,type IntentTarget} from "./router";
 import "./intent-dock.css";
 
@@ -48,17 +49,19 @@ export function IntentDock({
   const blocked = known && !available[target];
   const drop=(event:DragEvent)=>{const id=event.dataTransfer.getData(ASSET_DRAG);const file=event.dataTransfer.files[0];if(!id&&!file)return;event.preventDefault();event.stopPropagation();if(id)onReferenceAsset?.(id);else if(file)onReferenceFile?.(file);};
   return <div onDragOver={event=>{if(event.dataTransfer.types.includes(ASSET_DRAG)||event.dataTransfer.types.includes("Files"))event.preventDefault();}} onDrop={drop}>
-  {reference&&<div className="cf-intent-reference"><Thumb src={reference.src} label={reference.name} onRemove={onRemoveReference}/></div>}
   <CommandBar
     label="Describe the result"
     placeholder="Describe the scene you imagine"
     value={value}
     onChange={onChange}
     busy={busy}
-    mode={{value: override, onChange: setOverride, items: [{id: "auto", label: "Auto"}, {id: "image", label: "Image"}, {id: "video", label: "Video"}]}}
+    mode={{value: override, onChange: setOverride, items: [{id: "auto", label: "Auto", icon: <Sparkles size={16}/>}, {id: "image", label: "Image", icon: <ImageIcon size={16}/>}, {id: "video", label: "Video", icon: <Video size={16}/>}]}}
+    chips={onReferenceFile&&<Pill quiet aria-label={reference?"Replace the reference image":"Add a reference image"} title={reference?"Replace the reference image":"Add a reference image"} onClick={()=>void chooseDeviceFiles({accept:"image/png,image/jpeg,image/webp"}).then(([file])=>{if(file)onReferenceFile(file);})}><Plus size={14}/></Pill>}
     submitLabel={ready ? reference&&target==="image"?"Open Image with reference":reference&&target==="video"?"Open Video with reference":actions[target as Exclude<IntentTarget,"unknown">] : "Describe what you want first"}
+    submitText={!known||target==="image"?"Generate":`Open ${intentLabel(target).toLowerCase()}`}
     submitDisabled={!ready}
-    onSubmit={ready ? () => onSubmit(target as Exclude<IntentTarget,"unknown">) : undefined}
+    onSubmit={() => { if (ready) onSubmit(target as Exclude<IntentTarget,"unknown">); }}
+    above={reference&&<div className="cf-intent-reference"><Thumb src={reference.src} label={reference.name} onRemove={onRemoveReference}/></div>}
     hint={referenceError||(blocked ? `No ready local workflow for ${intentLabel(target)}.` : undefined)}
   />
   </div>;

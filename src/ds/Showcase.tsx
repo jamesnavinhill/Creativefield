@@ -201,6 +201,16 @@ const SWATCHES = [
 
 const RADII = ["--radius-sm", "--radius-md", "--radius-lg", "--radius-xl", "--radius-2xl"];
 
+/** The free input as it floats over every workspace: mode rail, text, quiet chips, tall Generate that throws glitter. */
+function CommandBarDemo(){
+  const [text,setText]=useState(""),[mode,setMode]=useState<"auto"|"image"|"video">("image"),[busy,setBusy]=useState(false);
+  return <CommandBar inline label="Describe the result" placeholder="Describe the scene you imagine" value={text} onChange={setText} busy={busy}
+    mode={{value:mode,onChange:setMode,items:[{id:"auto",label:"Auto",icon:<Sparkles size={16}/>},{id:"image",label:"Image",icon:<Image size={16}/>},{id:"video",label:"Video",icon:<Video size={16}/>}]}}
+    chips={<Pill quiet aria-label="Add a reference image" title="Add a reference image"><Plus size={14}/></Pill>}
+    submitLabel="Generate image" submitText="Generate" submitDisabled={!text.trim()}
+    onSubmit={()=>{setBusy(true);setTimeout(()=>setBusy(false),1600);}}/>;
+}
+
 function AdvancedSettingsDemo(){
   const [open,setOpen]=useState(false),[seed,setSeed]=useState('1234'),[steps,setSteps]=useState('20');
   return <><Button onClick={()=>setOpen(true)}>Open compact advanced settings</Button><Dialog className="ds-advanced-dialog" open={open} title="Advanced" onClose={()=>setOpen(false)} footer={<Button onClick={()=>setOpen(false)}>Done</Button>}><TextField label="Seed" type="number" value={seed} onChange={setSeed}/><TextField label="Steps" type="number" value={steps} onChange={setSteps}/></Dialog></>;
@@ -901,9 +911,9 @@ export default function Showcase() {
         </TileGrid>
       </Section>
 
-      <Section title="Command bar (floats at the top center)">
-        <Meta>Used for the free-intent input; fixed to the page, so it is not drawn here.</Meta>
-        {false && <CommandBar label="Describe the result" value="" onChange={() => {}} placeholder="Describe the scene you imagine" />}
+      <Section title="Command bar (the free input, floats at the bottom center)">
+        <Meta>Mode rail, text, quiet chips that work here, and a normal Generate at the right end. It rests at one line and grows to four, then scrolls and offers the larger editor. Type and press Generate or Enter: the glitter runs left along the text. Every primary button and Generate plays it along its own box.</Meta>
+        <CommandBarDemo />
       </Section>
 
       <Section title="Reveal (lists ease in top to bottom)">

@@ -199,6 +199,10 @@
   :root .ds-welcome__foot { flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3) var(--pad-page-x) var(--space-4); }
   :root .ds-welcome__note { flex: 1 1 100%; }
   :root .ds-welcome__foot > :last-child { margin-left: auto; }
+  /* The free input: the mode rail turns into a row above the text, Generate stays on the right. */
+  :root .ds-commandbar { flex-wrap: wrap; }
+  :root .ds-commandbar > .ds-seg.ds-seg--vertical { flex: 1 1 100%; flex-direction: row; }
+  :root .ds-commandbar > .ds-seg.ds-seg--vertical .ds-seg__item { flex: 1; flex-direction: row; padding: var(--space-1) var(--space-3); }
 }
 
 @keyframes ds-sheet-in { from { transform: translateY(100%); } to { transform: none; } }

@@ -55,6 +55,8 @@ import type {
   SceneBlock,
   GeometryQuality,
   KeyframeRole,
+  SceneContext,
+  SceneShot,
   ShotEstimate,
   ShotGeometry,
 } from "../src/film-studio/analysis-contract";
@@ -128,6 +130,8 @@ export type GeometryBatchInput = {
    * the stills are used directly for the MoGe attempts and the person clip.
    */
   stills?: CaptureStillsInput[];
+  /** The whole-clip scene description ( TASK-B), when the vision pass has stored one. */
+  scene?: SceneContext;
 };
 
 /** One pre-saved capture still for a shot (absolute path). */
@@ -276,7 +280,36 @@ type PreparedShot = {
    * still gets MoGe and a rebuilt set, but no figure; the text is the SAM3 confirmation.
    */
   environment?: string;
+  /** What the stored scene says about this shot ( TASK-B); undefined without a scene. */
+  sceneView?: SceneView;
 };
+
+/** What the stored scene says about one shot: its content, its people count and whether they all sit. */
+export type SceneView = {content: SceneShot["content"]; people: number; sitting: boolean};
+
+/** Shots the scene describes without a person in them: no person pass, the environment path only. */
+export const SCENE_NO_PERSON_CONTENT: ReadonlyArray<SceneShot["content"]> = ["motion-blur", "object-closeup", "graphic"];
+
+/** The visible height of a sitting person for the person-height anchor ( TASK-B), instead of 1.75 m. */
+export const SITTING_VISIBLE_HEIGHT_M = 1.3;
+
+/** The scene's view of one shot, or undefined when there is no scene or the scene has no such shot. */
+export function sceneViewOf(scene: SceneContext | undefined, shotIndex: number): SceneView | undefined {
+  const shot = scene?.shots.find((entry) => entry.shotIndex === shotIndex);
+  if (!scene || !shot) return undefined;
+  const named = scene.people.filter((person) => shot.people.includes(person.id));
+  return {content: shot.content, people: shot.people.length, sitting: named.length > 0 && named.every((person) => person.pose === "sitting")};
+}
+
+/**
+ * At most `count` tracks: the most-seen ones (more keyframes), then the largest. The kept tracks keep their
+ * order. Not `foldTracks`: that re-homes sightings, and these are whole tracks with keyframes, not sightings.
+ */
+export function capTracks<T extends {keyframes: readonly unknown[]; rawHeightM?: number; heightM: number}>(tracks: readonly T[], count: number): T[] {
+  const ranked = [...tracks].sort((left, right) => right.keyframes.length - left.keyframes.length || (right.rawHeightM ?? right.heightM) - (left.rawHeightM ?? left.heightM));
+  const kept = new Set(ranked.slice(0, Math.max(0, count)));
+  return tracks.filter((track) => kept.has(track));
+}
 
 /** Fewer MoGe rounds for an environment shot: the set needs a mesh, the floor only refines the camera. */
 const ENVIRONMENT_STILL_ATTEMPTS = 2;
@@ -571,7 +604,10 @@ export async function runGeometryBatch(input: GeometryBatchInput): Promise<Geome
     );
     entries.forEach((result, index) => {
       const shot = input.shots[index];
-      if (result.status === "fulfilled") prepared.push(result.value);
+      if (result.status === "fulfilled") {
+        result.value.sceneView = sceneViewOf(input.scene, shot.index);
+        prepared.push(result.value);
+      }
       else errors.push({shotIndex: shot.index, message: `Frame extraction failed: ${errorText(result.reason)}`});
     });
     if (!prepared.length) return failAll("No shot could be prepared for the geometry batch");
@@ -613,6 +649,11 @@ export async function runGeometryBatch(input: GeometryBatchInput): Promise<Geome
     // One SAM3 prompt per keyframe: its masks belong to that frame, nothing is guessed afterwards.
     const sam3Submitted: Array<{entry: PreparedShot; promptIds: string[]}> = [];
     for (const entry of prepared.filter((candidate) => !candidate.error)) {
+      // The scene says this shot shows no person ( TASK-B): no SAM3 pass, the environment path only.
+      if (entry.sceneView && SCENE_NO_PERSON_CONTENT.includes(entry.sceneView.content)) {
+        noPerson.push({entry, reason: `scene: ${entry.sceneView.content}`});
+        continue;
+      }
       try {
         const promptIds: string[] = [];
         for (const [frame, file] of (entry.personFrameFiles ?? []).entries()) {
@@ -1065,8 +1106,10 @@ async function buildEstimatedShot(
     if (profile.count / (profile.width * profile.height) < DEFAULT_MIN_MASK_AREA_RATIO) continue;
     const anchor = classifyMaskAnchor(profile);
     if (!anchor) continue;
+    // A sitting person is shorter than a standing one: the person-height anchor uses the visible height.
+    const anchorM = anchor.basis === "person-height" && entry.sceneView?.sitting ? SITTING_VISIBLE_HEIGHT_M : anchor.anchorM;
     const fxMask = fov.fxPx * (profile.width / fovAttempt.candidate.width);
-    const distanceM = distanceFromAnchorSize(fxMask, anchor.anchorM, anchor.anchorPx);
+    const distanceM = distanceFromAnchorSize(fxMask, anchorM, anchor.anchorPx);
     if (distanceM === null) continue;
     const root = rootFromAnchorBearing({fxPx: fxMask, centroidPx: anchor.centroidPx, imageWidth: profile.width, distanceM: Math.max(MIN_SUBJECT_DISTANCE_M, distanceM)});
     if (!root) continue;
@@ -1080,19 +1123,20 @@ async function buildEstimatedShot(
       zM: root.zM,
       distanceM,
       basis: anchor.basis,
-      anchorM: anchor.anchorM,
+      anchorM,
       anchorPx: anchor.anchorPx,
       maskHeight: profile.height,
       placeholder,
       maskIndex: index,
     });
-    anchors.push({basis: anchor.basis, anchorM: anchor.anchorM, anchorPx: anchor.anchorPx, centroidPx: anchor.centroidPx, maskWidth: profile.width, maskHeight: profile.height, timeSec, frameIndex});
+    anchors.push({basis: anchor.basis, anchorM, anchorPx: anchor.anchorPx, centroidPx: anchor.centroidPx, maskWidth: profile.width, maskHeight: profile.height, timeSec, frameIndex});
   }
   if (!observations.length) {
     return fail(`no usable floor and no person-size anchor on the ${frameTimesSec.length} keyframes (kept blockout; every mask is too small or cut by the top edge); tried ${describeAttempts(entry)}`, []);
   }
-  // People seen at once, not sightings: a pan must not turn two people into eight.
-  const peopleCount = steadyPeopleCount(observations);
+  // The scene's people count when it has one ( TASK-B); else the people seen at once, not sightings:
+  // a pan must not turn two people into eight.
+  const peopleCount = entry.sceneView?.content === "people" && entry.sceneView.people >= 1 ? entry.sceneView.people : steadyPeopleCount(observations);
   for (const frameIndex of new Set(observations.map((observation) => observation.frameIndex))) {
     const inFrame = observations.filter((observation) => observation.frameIndex === frameIndex).sort((left, right) => right.anchorPx - left.anchorPx);
     for (const extra of inFrame.slice(peopleCount)) observations.splice(observations.indexOf(extra), 1);
@@ -1783,6 +1827,8 @@ async function analyzeAcceptedShot(client: ComfyAnalysisClient, entry: PreparedS
     if (bundle) baseEvidence.personPassDiagnostics = bundle;
     return {error: `person pass could not analyse the SAM3 masks; kept blockout: ${errorText(error)}`, evidence: baseEvidence, runtimeMs};
   }
+  // The scene's people count caps the measured tracks ( TASK-B): the most-seen, then the largest, stay.
+  if (entry.sceneView?.content === "people" && entry.sceneView.people >= 1) persons = {...persons, tracks: capTracks(persons.tracks, entry.sceneView.people)};
   baseEvidence.persons = persons;
   baseEvidence.rawPersonHeightsM = persons.diagnostics.rawHeightsM;
   // The people are the ruler when the floor is not trusted: a scene measured far too small or large

@@ -40,10 +40,14 @@ import type {ShotStatus} from "./shot-status";
 // shot (MoGe anchor gives up and metric scale); people and set points move into the anchor frame.
 // Version 16 (2026-11-15,): the set is fitted as oriented boxes, slabs and upright cylinders per
 // connected part of the stage points instead of voxel stairs.
+// Version 23 (2026-11-16,): one vision pass describes the whole clip (scene) before the shots are measured.
 // Version 22 (2026-11-16): a shot without a camera path has as many people as are seen at once (a pan
 // made eight of two), nobody stands closer than 0.8 m, no set box blocks the camera, and the people set
 // the scale of the room when no floor was found; a floor the people contradict is not used.
-export const ANALYSIS_CONTRACT_VERSION = 22;
+// Version 24 (2026-11-17, TASK-B): the stored scene steers the geometry. A people shot takes the
+// scene's people count (and keeps at most that many measured tracks); motion-blur, object and graphic shots
+// get no person pass; a shot whose people all sit uses 1.3 m for the person-height anchor.
+export const ANALYSIS_CONTRACT_VERSION = 24;
 
 /** Resolution levels and keyframe policy; a change invalidates the cache. */
 export type PyramidParams = {
@@ -134,6 +138,18 @@ export type AnalysisShot = {
   /** JPEG data URLs at `decisionWidth`, aligned with `keyframes`. */
   frames: string[];
 };
+
+/** One person of the scene description; the same person keeps one id across shots. */
+export type ScenePerson = {id: string; look: string; pose: "sitting" | "standing" | "walking" | "lying" | "unknown"; facing: string};
+
+/** A large thing in the scene: furniture, wall, planter, vehicle. */
+export type SceneProp = {kind: string; label: string; depth: "foreground" | "midground" | "background"; side: "left" | "center" | "right"};
+
+/** What one shot shows: people, a blur from a camera move, an object close-up, environment or a graphic. */
+export type SceneShot = {shotIndex: number; content: "people" | "object-closeup" | "motion-blur" | "environment" | "graphic"; people: string[]; description: string};
+
+/** The vision model's description of the whole clip, stored with the analysis. */
+export type SceneContext = {model: string; setting: "interior" | "exterior" | "unknown"; place: string; action: string; people: ScenePerson[]; props: SceneProp[]; shots: SceneShot[]};
 
 export type ShotDecision = {
   shotIndex: number;
@@ -324,6 +340,8 @@ export type AnalysisScan = {
   shots: AnalysisShot[];
   statuses: ShotStatus[];
   decisions: ShotDecision[];
+  /** The whole-clip scene description, when the vision pass has run ( TASK-A). */
+  scene: SceneContext | null;
   geometries: ShotGeometry[];
   /** Shots that are deliberately not measured (no person / no floor); cached so they are not retried. */
   skips: ShotSkip[];

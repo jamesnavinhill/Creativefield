@@ -412,6 +412,10 @@
 .ds-generate:hover:not(:disabled):not([aria-disabled="true"]) { box-shadow: var(--accent-glow-strong), var(--inset-glint); background: var(--button-primary-bg-hover); border-color: var(--accent); }
 .ds-generate:active:not(:disabled):not([aria-disabled="true"]) { transform: scale(0.98); }
 .ds-generate:disabled,.ds-generate[aria-disabled="true"] { opacity: 0.5; box-shadow: none; border-color: var(--line-strong); cursor:not-allowed; }
+/* Inline: a normal-sized rectangle that hugs its word (the CommandBar's Generate). */
+.ds-generate--inline { width: auto; max-width: var(--button-max-w); height: calc(36px * var(--ui-scale)); padding: 0 var(--space-5); border-radius: var(--radius-md); font-size: var(--text-sm); line-height: var(--lh-sm); }
+/* Glitter: the dot-matrix trail a main action sends along its box when pressed; sized and drawn by emitGlitter. */
+.ds-glitter { position: fixed; z-index: 90; pointer-events: none; }
 /* A disabled main action with its reason underneath, always visible. */
 .ds-generate-wrap { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; }
 .ds-generate__reason { font-size: var(--text-caption); line-height: var(--lh-caption); color: var(--text-secondary); text-align: center; text-wrap: pretty; }
@@ -736,6 +740,9 @@
 .ds-seg--block { display: flex; width: 100%; }
 .ds-seg--block { padding: 4px; }
 .ds-seg--block .ds-seg__item { flex: 1; justify-content: center; height: calc(34px * var(--ui-scale)); padding: 0 var(--space-4); font-size: var(--text-caption); line-height: var(--lh-caption); }
+/* Vertical: a mode rail at the side of a bar (CommandBar). Items stack, one short line each (icon beside the word), so the bar rests low. */
+.ds-seg.ds-seg--vertical { display: flex; flex-direction: column; justify-content: flex-start; gap: 2px; padding: 3px; border-radius: var(--radius-xl); overflow: visible; }
+.ds-seg.ds-seg--vertical .ds-seg__item { height: calc(20px * var(--ui-scale)); flex-direction: row; justify-content: flex-start; gap: var(--gap-inline); padding: 0 var(--space-2); border-radius: var(--radius-md); font-size: var(--text-2xs); line-height: var(--lh-2xs); }
 
 /* â”€â”€ Media card (assets grid) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .ds-mediacard { display: flex; flex-direction: column; min-width: 0; border-radius: var(--radius-xl); background: var(--surface-control); overflow: hidden; transition: background var(--dur-fast) var(--ease); }
@@ -1822,14 +1829,18 @@ button.ds-thumb__art:disabled { opacity: 0.45; cursor: not-allowed; }
 .ds-density__value { min-width: 1ch; text-align: right; font-size: var(--text-xs); line-height: var(--lh-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 
 /* â”€â”€ Command bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.ds-commandbar { animation: ds-glow 5s ease-in-out infinite; position: fixed; z-index: 40; bottom: var(--space-5); left: 50%; transform: translateX(-50%); width: min(calc(760px * var(--ui-scale)), calc(100vw - 2 * var(--pad-page-x))); display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-radius: var(--radius-2xl); background: var(--surface-panel); box-shadow: var(--shadow-pop); }
+.ds-commandbar { animation: ds-glow 5s ease-in-out infinite; position: fixed; z-index: 40; bottom: var(--space-5); left: 50%; transform: translateX(-50%); width: min(calc(860px * var(--ui-scale)), calc(100vw - 2 * var(--pad-page-x))); display: flex; align-items: stretch; gap: var(--space-2); padding: var(--space-2); border-radius: var(--radius-2xl); background: var(--surface-panel); box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--line-soft); }
+.ds-commandbar--inline { position: relative; bottom: auto; left: auto; transform: none; width: 100%; max-width: calc(860px * var(--ui-scale)); z-index: auto; }
 .ds-commandbar:focus-within { animation: none; box-shadow: var(--shadow-pop), 0 0 0 1px var(--accent), 0 0 36px var(--accent-soft), 0 0 80px var(--accent-soft); }
-.ds-commandbar__icon { flex: none; align-self: center; color: var(--accent); }
-.ds-commandbar__input { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; padding: calc(8px * var(--ui-scale)) 0; font: inherit; font-size: var(--text-md); line-height: var(--lh-md); color: var(--text-primary); max-height: 168px; }
+.ds-commandbar__main { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: var(--space-1); padding: 0 0 0 var(--space-2); }
+.ds-commandbar__input { width: 100%; resize: none; border: 0; outline: 0; background: transparent; padding: var(--space-1) 0; font: inherit; font-size: var(--text-md); line-height: var(--lh-md); color: var(--text-primary); max-height: calc(var(--lh-md) * 4 + 2 * var(--space-1)); overflow-y: auto; }
 .ds-commandbar__input::placeholder { color: var(--text-placeholder); }
-.ds-commandbar .ds-seg { align-self: center; flex: none; }
-.ds-commandbar__go { flex: none; align-self: center; display: grid; place-items: center; width: calc(36px * var(--ui-scale)); height: calc(36px * var(--ui-scale)); border: 0; border-radius: 50%; background: var(--accent); color: var(--surface-page); cursor: pointer; }
-.ds-commandbar__go:disabled { background: var(--surface-control); color: var(--text-tertiary); cursor: default; }
+.ds-commandbar__row { display: flex; align-items: flex-end; gap: var(--space-2); }
+.ds-commandbar__chips { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.ds-commandbar__chips .ds-pill--quiet { gap: var(--gap-inline); padding: 0 var(--space-3); }
+.ds-commandbar__go { flex: none; display: flex; }
+.ds-commandbar > .ds-seg { flex: none; align-self: stretch; }
+.ds-commandbar__above { position: absolute; bottom: calc(100% + var(--space-2)); left: 50%; transform: translateX(-50%); }
 .ds-commandbar__hint { position: absolute; bottom: calc(100% + var(--space-2)); left: var(--space-4); padding: var(--space-1) var(--space-3); border-radius: var(--radius-full); background: var(--surface-panel); font-size: var(--text-xs); color: var(--text-secondary); box-shadow: var(--shadow-pop); }
 
 /* â”€â”€ Side panel position: the ONE place â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
