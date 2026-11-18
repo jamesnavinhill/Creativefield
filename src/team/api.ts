@@ -47,6 +47,8 @@ export const loadAiText=(call:Call,workspace:string)=>call<AiTextSettings>(works
 export const chooseAiText=(call:Call,workspace:string,providerId:AiTextProviderStatus["id"])=>call<AiTextSettings>(workspacePath(workspace,"ai-text"),"POST",{providerId});
 export const aiTextStateLabel=(state:AiTextProviderState)=>state==="ready"?"Ready":state==="needs_key"?"Needs a key":"Sign in needed";
 export const assetUrl=(workspace:string,id:string,download=false)=>`/api/v1${workspacePath(workspace,`assets/${encodeURIComponent(id)}/content`)}${download?"?download=1":""}`;
+/** A small copy of a picture for tiles; the full file stays at `assetUrl` (the viewer reads it from `data-preview-src`). */
+export const assetThumbUrl=(workspace:string,id:string)=>`${assetUrl(workspace,id)}?w=640`;
 /** The exact delivery profiles the team server can make. They are fixed, never chosen by the browser. */
 export type ExportProfileId="mp4-h264-720p24"|"mp4-h264-1080p24";
 /** Makes a new muted MP4 asset from a finished video and returns it. Encoding can take minutes, so this waits longer than a normal call. */

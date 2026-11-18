@@ -6,7 +6,8 @@ import { transaction } from "./db";
 import { newId, hashToken } from "./crypto";
 import type { DiskStore } from "./storage";
 import {createReadStream} from "node:fs";
-import {readFile,stat} from "node:fs/promises";
+import {mkdir,readFile,rename,stat} from "node:fs/promises";
+import nodePath from "node:path";
 import {byteRange} from "./range";
 import {generationSchema} from "./storyboard-execution";
 import {DEFAULT_PNG_VALIDATION_LIMITS,PngValidationError,validatePngBytes} from "./image-artifacts-validation";
@@ -32,6 +33,25 @@ type GenerationRow={asset_id:string;run_id:string;capability_id:string;capabilit
  * chained HD finish the parent run and the source file. Videos did not carry this in their metadata
  * before, so the producer is read from the runs that list the file as an output (old files included).
  */
+const smallCopies=new Map<string,Promise<string>>();
+/** A WebP copy of a picture at most `width` wide, written once into the app's thumbs folder. */
+function smallCopy(file:string,id:string,width:number):Promise<string>{
+  const dir=nodePath.resolve(process.env.COMFYFIELD_HOME?.trim()||".comfyfield","thumbs"),target=nodePath.join(dir,`${id}-${width}.webp`);
+  let pending=smallCopies.get(target);
+  if(!pending){
+    pending=(async()=>{
+      if(await stat(target).then(()=>true,()=>false))return target;
+      await mkdir(dir,{recursive:true});
+      const {default:sharp}=await import("sharp"),part=`${target}.${process.pid}.part`;
+      await sharp(file).rotate().resize({width,withoutEnlargement:true}).webp({quality:80}).toFile(part);
+      await rename(part,target);
+      return target;
+    })();
+    smallCopies.set(target,pending);
+    void pending.catch(()=>{}).finally(()=>smallCopies.delete(target));
+  }
+  return pending;
+}
 export async function attachGenerationFacts(pool:Pool,workspaceId:string,items:Array<{id:string;created_at?:Date;metadata?:Record<string,unknown>}>){
   if(!items.length)return;
   const ids=items.map(row=>row.id);
@@ -258,9 +278,17 @@ export async function resourceRoutes(app: FastifyInstance, pool: Pool, store: Di
     /* A released file lives in the guest's browser only; its row stays until the workspace goes. */
     const file=await store.file(workspaceId,asset.storage_key).catch(()=>null);
     if(!file)throw new HttpError(404,"This file is kept in your browser.");
+    const query=z.object({download:z.enum(["1"]).optional(),w:z.enum(["640"]).optional()}).strict().parse(request.query);
+    /* Tiles ask for a small copy (?w=640): a feed of full-size originals costs the browser about a gigabyte of
+       decoded pictures. Made once per file, kept on disk, and the original is the fallback for anything sharp
+       cannot read. A file never changes under its id, so the browser may keep the small copy for good. */
+    if(query.w&&!query.download&&/^image\/(png|jpeg|webp)$/.test(asset.content_type)){
+      const small=await smallCopy(file,id,Number(query.w)).catch(()=>undefined);
+      if(small)return reply.header("Content-Type","image/webp").header("Cache-Control","private, max-age=31536000, immutable").header("Content-Length",(await stat(small)).size).send(createReadStream(small));
+    }
     const size=(await stat(file)).size;
     const range=byteRange(request.headers.range,size);
-    const download=z.object({download:z.enum(["1"]).optional()}).strict().parse(request.query).download;
+    const download=query.download;
     reply.header("Content-Type",asset.content_type).header("Accept-Ranges","bytes").header("Content-Disposition",dispositionHeader(download?"attachment":"inline",downloadName(asset,asset.project_name,asset.made_by)));
     if(range==="invalid")return reply.code(416).header("Content-Range",`bytes */${size}`).send();
     if(range){reply.code(206).header("Content-Range",`bytes ${range.start}-${range.end}/${size}`).header("Content-Length",range.end-range.start+1);}

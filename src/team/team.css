@@ -130,3 +130,6 @@
   .cf-team { overflow-y:auto; overflow-x:hidden; }
   .cf-start .ds-presetgrid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+/* A day of the feed or library that is off screen is not laid out or painted until it scrolls near (layout only). */
+.cf-day { content-visibility:auto; contain-intrinsic-size:auto 900px; }
