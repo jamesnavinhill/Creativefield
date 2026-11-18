@@ -29,6 +29,18 @@ function Set-CreativeFieldTheme {
 
 # The release label in the editor bar links to the upstream project (credit for the GPL-3.0 editor).
 $editorHtml = Join-Path $target 'editor\index.html'
+# The CreativeField embed script (scripts/h3-editor-embed.js) sits before </body> between markers and is replaced on
+# every run, like the theme: one quiet top bar when the editor is embedded in a CreativeField project.
+function Set-CreativeFieldEmbed {
+  $html = Get-Content $editorHtml -Raw
+  $start = '<!-- CreativeField embed -->'; $end = '<!-- /CreativeField embed -->'
+  $at = $html.IndexOf($start)
+  if ($at -ge 0) { $stop = $html.IndexOf($end, $at); $html = $html.Remove($at, $stop + $end.Length - $at) }
+  $script = Get-Content (Join-Path $repoRoot 'scripts\h3-editor-embed.js') -Raw
+  $html = $html.Replace('</body>', "$start<script>`n$script</script>$end`n</body>")
+  Set-Content -Path $editorHtml -Value $html -NoNewline -Encoding utf8
+}
+
 function Set-CreativeFieldLinks {
   $html = Get-Content $editorHtml -Raw
   $label = '<span class="release" title="The version of H3 Editor this is">H3 Editor __RELEASE__</span>'
@@ -39,6 +51,7 @@ function Set-CreativeFieldLinks {
 if (Test-Path $editorJs) {
   Set-CreativeFieldTheme
   Set-CreativeFieldLinks
+  Set-CreativeFieldEmbed
   Write-Host "H3 Editor is already installed at $target; theme refreshed, nothing else changed."
   exit 0
 }
@@ -119,6 +132,7 @@ Write-Host "Installed H3 Editor at $target"
 Write-Host "Project mapping: ?project=cf-<projectId> is created once and reopened."
 Write-Host "Same-origin hosting: /h3-editor/<workspaceId>/h3take/editor."
 Set-CreativeFieldLinks
+Set-CreativeFieldEmbed
 Write-Host "Theme: scripts/h3-editor-theme.css appended to editor/editor.css."
 
 if ($PythonExe -and (Test-Path $PythonExe)) {

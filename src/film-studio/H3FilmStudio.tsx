@@ -1,6 +1,6 @@
 ﻿import {SourceCredit,WorkflowDescription} from "../team/workflow-info";
 import {lazy,Suspense,useEffect,useMemo,useRef,useState} from "react";
-import {Block,Button,Dialog,EmptyState,LinkButton,Meta,Notice,PromptField,StatusText,Thumb,ThumbGrid,Toolbar} from "../ds";
+import {Block,Button,Dialog,EmptyState,Meta,Notice,PromptField,StatusText,Thumb,ThumbGrid} from "../ds";
 import {workspacePath,type Call,type Project,type Worker,type Workspace} from "../team/api";
 import {compileShotDirection,type VideoHandoff} from "../capabilities/shot-direction";
 import {scanReferenceClip} from "./analysis-client";
@@ -343,18 +343,25 @@ export function H3FilmStudio({workspace,project,call,canCreate,onOpenShotGenerat
     }catch(cause){setAnalysisError((cause as Error).message);}
   }
 
+  /* The editor's ... menu (scripts/h3-editor-embed.js) asks for CreativeField's own actions by message. */
+  useEffect(()=>{
+    const listen=(event:MessageEvent)=>{
+      if(event.origin!==location.origin||typeof event.data?.type!=="string")return;
+      if(event.data.type==="creativefield:analyze"&&origin)void openAnalysis();
+      if(event.data.type==="creativefield:newtab")window.open(`/h3-editor/${workspace.id}/h3take/editor?project=${encodeURIComponent(name)}`,"_blank","noopener");
+    };
+    addEventListener("message",listen);return()=>removeEventListener("message",listen);
+  });
   if(legacy)return <LegacyFilmStudio workspace={workspace} project={project} canCreate={canCreate} onOpenShotGenerator={onOpenShotGenerator} onSendToVideo={onSendToVideo}/>;
   return <div className="cf-h3studio">
     <WorkflowDescription title="Film Studio">
-      <Meta>Edit clips on one timeline. Analyze clip measures a clip's camera and adds a grey-block previs of it.</Meta>
+      <Meta>Edit clips on one timeline. Analyze clip measures a clip's camera and adds a grey-block previs of it. More actions are in the editor's ... menu next to the project name.</Meta>
+      <Meta>{worker?`Runs on ${worker.name}`:"Looking for HyperFlow H3 Flash"}</Meta>
       <SourceCredit credit={{name:"H3 Editor by Igor LS",url:"https://github.com/igorls/comfyui-h3-editor",license:"GPL-3.0",what:"The timeline editor"}}/>
     </WorkflowDescription>
-    <Toolbar end={<><Meta>{worker?.name??"Looking for HyperFlow H3 Flash"}</Meta>{origin&&<Button variant="secondary" onClick={()=>void openAnalysis()}>Analyze clip</Button>}<Button variant="ghost" onClick={()=>setLegacy(true)}>Classic studio</Button>{origin&&<LinkButton variant="secondary" href={`/h3-editor/${workspace.id}/h3take/editor?project=${encodeURIComponent(name)}`}>Open in new tab</LinkButton>}</>}>
-      <Meta>H3 Editor</Meta>
-    </Toolbar>
     {error&&<Notice priority={10} title="The H3 Editor is not reachable" actions={<Button variant="secondary" onClick={()=>{setError("");setLegacy(true);}}>Use classic studio</Button>} details={error}>The editor runs inside the HyperFlow H3 Flash worker. Connect a local worker in Settings and try again.</Notice>}
     {origin
-      ?<iframe className="cf-h3studio__frame" title="H3 Editor" src={`/h3-editor/${workspace.id}/h3take/editor?project=${encodeURIComponent(name)}&cf_project=${encodeURIComponent(project.id)}`} allow="clipboard-write; fullscreen"/>
+      ?<iframe className="cf-h3studio__frame" title="H3 Editor" src={`/h3-editor/${workspace.id}/h3take/editor?project=${encodeURIComponent(name)}&cf_project=${encodeURIComponent(project.id)}&cf_name=${encodeURIComponent(project.name)}`} allow="clipboard-write; fullscreen"/>
       :!error&&<Meta>Looking for the HyperFlow H3 Flash worker…</Meta>}
     <Dialog wide={!!scan} open={analysisOpen} title={scan&&(scanClip||youtube)?`Analyze ${scanClip?(scanClip.name||"clip"):youtube?.name}`:"Analyze a clip"} onClose={()=>setAnalysisOpen(false)}
       footer={!scan&&!scanning?(youtubeRunOf(link)?<Button variant="primary" onClick={analyseYoutube}>Analyze</Button>:undefined):scan&&!scanning?<>

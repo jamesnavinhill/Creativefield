@@ -166,3 +166,10 @@ h2, h3, .bin-name, .head-title { font-size: 12.6px; font-weight: 600; }
 /* The release label links to the upstream project: quiet like the label it was, underlined on hover. */
 a.release { color: var(--muted); text-decoration: none; }
 a.release:hover { color: var(--text); text-decoration: underline; }
+
+/* Embedded in CreativeField (data-cf-embed, set by h3-editor-embed.js): one quiet bar. Project name and More (...) on
+   the left; the checks chip only when something needs a look; Export as the one main action. Render all drafts and
+   Shortcuts are in More; New project and Close do not apply inside a CreativeField project. */
+[data-cf-embed] #newProject, [data-cf-embed] #close, [data-cf-embed] #renderAll, [data-cf-embed] #shortcuts { display: none !important; }
+[data-cf-embed] #checks:not(.warn) { display: none !important; }
+[data-cf-embed] #projectMenu hr[data-cf-item] { border: 0; border-top: 1px solid var(--line, rgba(255,255,255,.08)); margin: 4px 0; }
