@@ -1,5 +1,6 @@
 import {isOpenJutsuAdvanced,OPENJUTSU_ADVANCED_FLASH_ID,OPENJUTSU_SCENE_GUIDE,openJutsuReferenceIssue,openJutsuSceneGuideIssue} from "../capabilities/openjutsu-advanced";
 import {SourceCredit,WorkflowDescription} from "./workflow-info";
+import {InstallNotice,type InstallJob} from "./InstallNotice";
 import {TeamMediaInput} from "./TeamMediaInput";
 import {nearestFormat} from "./picture-format";
 import {imageReaderName,promptStep} from "./prompt-steps";
@@ -157,7 +158,42 @@ export function TeamComposer({manifest:chosenManifest,catalogue,onCapability,use
   const sleeping=worker?undefined:hyperflowRecovery??(readiness.state==="offline"?workers.filter(w=>w.enabled).sort((a,b)=>Number(!!b.can_start)-Number(!!a.can_start))[0]:undefined);
   /* One cause, said once, in the problem bar, carrying the one action that clears it (rules 36, 42).
      The Generate button does not repeat it: its footer line covers this draft only. */
-  const blocker=workerBlocker({worker,workers,readiness,offlineWorker:sleeping,starting,settings:settingsPlace,canRunLocal:!!onRunLocal,guest:!!user.guest});
+  /* Install: on this computer, CreativeField fetches the missing model files and node packs itself
+     (server/model-install.ts). The plan gives the size for the button; the job is followed while it runs. */
+  const installWorker=user.localSingleUser&&!user.guest&&workspace.role==="admin"?(worker??workers.find(w=>w.enabled&&w.inventory?.online&&/^http:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(w.origin))):undefined;
+  const [installPlan,setInstallPlan]=useState<{bytes:number;files:number;manual:string[]}>();
+  const [installJob,setInstallJob]=useState<InstallJob>();
+  const needsFiles=!!readiness.missing?.length&&readiness.state!=="ready";
+  useEffect(()=>{
+    setInstallPlan(undefined);
+    if(!installWorker||!needsFiles)return;
+    let live=true;
+    call<{bytes:number;files:number;manual:string[]}>(workspacePath(workspace.id,`install/plan?capabilityId=${encodeURIComponent(executionManifest.id)}&workerId=${installWorker.id}`),"GET").then(plan=>{if(live)setInstallPlan(plan);}).catch(()=>{});
+    return()=>{live=false;};
+  },[installWorker?.id,executionManifest.id,needsFiles,readiness.missing?.length]);
+  const installing=installJob&&installJob.capabilityId===executionManifest.id?installJob:undefined;
+  useEffect(()=>{
+    if(!installWorker)return;
+    let live=true,timer:ReturnType<typeof setTimeout>|undefined;
+    const poll=async()=>{
+      const next=await call<InstallJob|{state:"idle"}>(workspacePath(workspace.id,"install"),"GET").catch(()=>undefined);
+      if(!live)return;
+      if(next&&next.state!=="idle"){
+        setInstallJob(next as InstallJob);
+        if(next.state==="done"){await call(workspacePath(workspace.id,`workers/${installWorker.id}/probe`),"POST").catch(()=>{});onQueued();}
+        if(next.state==="installing"||next.state==="restarting")timer=setTimeout(()=>void poll(),2000);
+      }
+    };
+    void poll();
+    return()=>{live=false;if(timer)clearTimeout(timer);};
+  },[installWorker?.id,installJob?.state]);
+  async function startInstall(){
+    if(!installWorker)return;
+    setError("");
+    try{setInstallJob(await call<InstallJob>(workspacePath(workspace.id,"install"),"POST",{capabilityId:executionManifest.id,workerId:installWorker.id}));}
+    catch(e){setError((e as Error).message);}
+  }
+  const blocker=workerBlocker({worker,workers,readiness,offlineWorker:sleeping,starting,settings:settingsPlace,canRunLocal:!!onRunLocal,guest:!!user.guest,install:installPlan&&installPlan.files?installPlan:undefined});
   async function startComfy(target=sleeping){
     if(!target)return;
     setStarting(true);setError("");
@@ -197,6 +233,7 @@ export function TeamComposer({manifest:chosenManifest,catalogue,onCapability,use
   function blockerAction(){
     if(!blocker)return undefined;
     const fix=blocker.fix;
+    if(fix.kind==="install")return <Button variant="secondary" onClick={()=>void startInstall()}>{fix.label}</Button>;
     if(fix.kind==="start-comfy")return <Button variant="secondary" disabled={starting} onClick={()=>void startComfy(sleeping??worker)}>{starting?"Starting…":fix.label}</Button>;
     if(fix.kind==="connect-comfy"||fix.kind==="open-settings"||fix.kind==="cloud-sign-in")return onWorkerSettings?<Button variant="secondary" onClick={onWorkerSettings}>{fix.kind==="open-settings"?"Open worker settings":fix.label}</Button>:undefined;
     if(fix.kind==="open-models")return <Button variant="secondary" onClick={()=>{if(onModels)onModels();else onQueued();}}>Open Models</Button>;
@@ -458,7 +495,8 @@ export function TeamComposer({manifest:chosenManifest,catalogue,onCapability,use
       {trimInput?.role===port.id&&<TrimToFit workspace={workspace} project={project} call={call} assetId={trimInput.assetId} maxSeconds={port.id==="motion_video"&&motionRoute?MOTION_MAX_CLIP_SECONDS:undefined} open onClose={()=>setTrimInput(null)} onTrimmed={id=>{setFiles(old=>({...old,[port.id]:null}));setInput(port.id,id);onQueued();}}/>}</div>;
   }
   return <div className="cf-production"><WorkflowDescription title={finish?.title??manifest.title}>{workflowInfo??<><Meta>{manifest.description}</Meta>{masked&&<MaskHowItWorks/>}{guide&&<HowItWorks compact title={guide.summary} lead="" steps={guide.steps.map(step=>({icon:<WandSparkles size={16}/>,...step}))}/>}<SourceCredit credit={manifest.credit}/></>}</WorkflowDescription><Panel footer={<div className="cf-form">
-    {blocker&&<Notice consequence priority={35} title={blocker.title} actions={blockerAction()} details={blocker.details}>{blocker.text}</Notice>}
+    {installing&&installing.state!=="done"?<InstallNotice job={installing} onStop={()=>void call(workspacePath(workspace.id,"install/stop"),"POST").then(()=>setInstallJob(j=>j&&{...j,state:"stopped"}))} onRetry={()=>void startInstall()} onCheck={()=>{if(installWorker)void call(workspacePath(workspace.id,`workers/${installWorker.id}/probe`),"POST").finally(onQueued);}}/>
+      :blocker&&<Notice consequence priority={35} title={blocker.title} actions={blockerAction()} details={blocker.details}>{blocker.text}</Notice>}
     {masked&&requirements&&requirements.state!=="ready"&&<Notice priority={40} title="Installation required" actions={<Button variant="secondary" disabled={locked} onClick={()=>{if(onModels)onModels();else onQueued();}}>Open Models</Button>} details={requirements.missing.join("\n")}>{requirements.missing.join(", ")}. Models shows which files are missing and how to add them{requirements.instructions?`; ${requirements.instructions}`:""}</Notice>}
     {!canQueue&&(workspace.role==="viewer"
       ?<Notice tone="info" title="Viewer access">You can look, but not upload or queue runs.</Notice>

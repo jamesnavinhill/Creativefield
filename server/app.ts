@@ -60,6 +60,7 @@ import {blockShotRoutes} from "./stage/routes";
 import {replaceClipCheckRoutes} from "./replace-clip-check";
 import {promptExpanderRoutes} from "./prompt-expander";
 import {onboardingRoutes} from "./onboarding";
+import {installRoutes} from "./model-install";
 import {h3EditorRoutes} from "./h3-editor";
 import {h3EditorProxyRoutes} from "./h3-proxy";
 import {CLOUD_KEY_REFUSED_REASON,cloudAccountFor} from "./cloud-account";
@@ -430,6 +431,7 @@ export async function buildServer(config: ServerConfig, pool: Pool, dependencies
   await replaceClipCheckRoutes(app,pool,store);
   await promptExpanderRoutes(app,pool);
   await onboardingRoutes(app,pool,config);
+  await installRoutes(app,pool,config,catalogue);
   await h3EditorRoutes(app,pool,store);
   await h3EditorProxyRoutes(app,pool,config.publicOrigin);
   app.get(`${base}/node-editor`,async request=>{

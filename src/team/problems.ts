@@ -10,7 +10,7 @@ import type { Worker } from "./api";
  */
 
 /** The one action that clears a problem. A screen turns it into a button carrying this label. */
-export type FixKind = "start-comfy" | "connect-comfy" | "cloud-sign-in" | "check-again" | "open-settings" | "open-models" | "run-local" | "retry";
+export type FixKind = "install" | "start-comfy" | "connect-comfy" | "cloud-sign-in" | "check-again" | "open-settings" | "open-models" | "run-local" | "retry";
 export type ProblemFix = { kind: FixKind; label: string };
 export type PlainProblem = {
   title: string;
@@ -24,6 +24,7 @@ export type PlainProblem = {
 export type ProblemContext = { address?: string; settings?: string };
 
 const FIX_LABELS: Record<FixKind, string> = {
+  install: "Install",
   "start-comfy": "Start ComfyUI",
   "connect-comfy": "Connect ComfyUI",
   "cloud-sign-in": "Sign in with your Comfy key",
@@ -170,8 +171,10 @@ export function workerBlocker(input: {
   canRunLocal?: boolean;
   /** A hosted guest: their worker is Comfy Cloud, reached by signing in with their own key. */
   guest?: boolean;
+  /** What CreativeField can install itself on this computer for this tool (model files and node packs). */
+  install?: { bytes: number; files: number };
 }): WorkerBlocker | null {
-  const { worker, workers, readiness, offlineWorker, starting, settings = "Settings", canRunLocal, guest } = input;
+  const { worker, workers, readiness, offlineWorker, starting, settings = "Settings", canRunLocal, guest, install } = input;
   if (starting) return { cause: "starting", title: "ComfyUI is starting", text: "This model runs as soon as ComfyUI answers.", fix: fixFor("start-comfy") };
   if (offlineWorker) return offlineBlocker(offlineWorker);
   if (!workers.length && guest) {
@@ -184,6 +187,10 @@ export function workerBlocker(input: {
   if (!readiness || state === "ready") return null;
   if (state === "offline") return offlineBlocker(worker ?? workers[0]);
   const missing = readiness.missing ?? [];
+  /* Missing files that CreativeField can fetch itself: the one action is Install, with the download size. */
+  if (install?.files && missing.length && (state === "install_required" || state === "download_required" || state === "incompatible")) {
+    return { cause: "missing-files", title: "This tool needs more files", text: `This tool needs ${needsText(missing)}. CreativeField can install them into your ComfyUI.`, fix: { kind: "install", label: install.bytes ? `Install · ${(install.bytes / 1e9).toFixed(1)} GB` : "Install" }, details: missing.map(item => `${item.kind} ${item.name}${item.location ? ` (${item.location})` : ""}`).join("\n") };
+  }
   if ((state === "install_required" || state === "download_required") && missing.length) {
     return { cause: "missing-files", title: "This tool needs more files", text: `This tool needs ${needsText(missing)} before it can run here. Models shows which ones and where they go.`, fix: fixFor("open-models"), details: missing.map(item => `${item.kind} ${item.name}${item.location ? ` (${item.location})` : ""}`).join("\n") };
   }
