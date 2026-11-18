@@ -1118,7 +1118,8 @@ function emitGlitter(button: HTMLElement | null, direction: GlitterDirection = "
   const host = (button.parentElement?.closest(GLITTER_HOSTS) as HTMLElement | null)?.getBoundingClientRect()
     ?? { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
   const styles = getComputedStyle(button);
-  const accent = styles.getPropertyValue("--accent").trim() || "currentColor";
+  /* The trail is a glow, so it takes the glow colour (CreativeField yellow), not the blue accent. */
+  const accent = styles.getPropertyValue("--brand").trim() || styles.getPropertyValue("--accent").trim() || "currentColor";
   const core = styles.getPropertyValue("--text-primary").trim() || accent;
   const scale = parseFloat(styles.getPropertyValue("--ui-scale")) || 1;
   const gap = 4 * scale, pad = 56 * scale, maxReach = 760 * scale;

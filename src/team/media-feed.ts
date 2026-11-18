@@ -92,7 +92,8 @@ export function useStoryboardFeed(call:Call,workspaceId:string,projectId:string,
             films.push({id:render.id,assetId:render.output_asset_id,state:render.state,createdAt:render.created_at,board:board.name});
           }
         }
-        if(alive.current)setState({hidden,films});
+        /* The same boards and films keep the old state, so the feed is not drawn again every ten seconds. */
+        if(alive.current)setState(old=>old.hidden.size===hidden.size&&[...hidden].every(id=>old.hidden.has(id))&&JSON.stringify(old.films)===JSON.stringify(films)?old:{hidden,films});
       }catch{/* the feed keeps what it last read */}
       finally{if(alive.current)timer=setTimeout(read,10000);}
     }

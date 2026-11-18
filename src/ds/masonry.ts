@@ -35,8 +35,12 @@ export function useMasonry(ref:RefObject<HTMLElement|null>,cols:number,options:M
    const spans=span?.(cells)??cells.map(()=>1),below=gap?parseFloat(getComputedStyle(el).columnGap)||0:0,heights=new Array<number>(cols).fill(0);
    /* Width first: a tile's height follows its width, so its column span is set before it is measured. */
    cells.forEach((cell,index)=>{cell.style.gridRow="";cell.style.gridColumn=`span ${Math.min(cols,spans[index]??1)}`;});
+   /* Measure every tile first, then place them all. Measuring one and placing it before measuring the next makes
+      the browser lay the whole grid out again for every tile (seconds of freeze on a feed of hundreds). A tile's
+      height depends only on its width, which is already set, so the result is the same. */
+   const tall=cells.map(cell=>cell.getBoundingClientRect().height);
    for(const [index,cell] of cells.entries()){
-    const width=Math.min(cols,spans[index]??1),rows=Math.max(1,Math.ceil((cell.getBoundingClientRect().height+below)/MASONRY_ROW)),{column,top}=placeTile(heights,width);
+    const width=Math.min(cols,spans[index]??1),rows=Math.max(1,Math.ceil((tall[index]+below)/MASONRY_ROW)),{column,top}=placeTile(heights,width);
     cell.style.gridColumn=`${column+1} / span ${width}`;cell.style.gridRow=`${top+1} / span ${rows}`;
     for(let i=column;i<column+width;i++)heights[i]=top+rows;
    }};
