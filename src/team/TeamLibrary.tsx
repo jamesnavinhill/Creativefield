@@ -1,7 +1,7 @@
 import type {ReactNode} from "react";
 import {Fragment,lazy,Suspense,useEffect,useState} from "react";
-import {Boxes,Download,Eye,Image as ImageIcon,Palette,Pencil} from "lucide-react";
-import {ASSET_TYPE_DRAG,DayRail,dayAnchor,FrameStrip,Block,LazyVideo,MosaicGrid,MosaicTile,ResultTile,mosaicAccent,Button,ClampText,ConfirmDialog,ContactSheet,Dialog,IconButton,MediaViewer,MediaViewerInfo,Notice,EmptyState,HistoryItem,LinkButton,MediaCard,Meta,PerformanceMirror,ResultGrid,SectionHeader,SegmentedTabs,StatusText,Toolbar,UploadSlot,UploadTile,densityColumnsClass,useDensity,type ContactSheetItem} from "../ds";
+import {Boxes,Clapperboard,Download,Eye,Image as ImageIcon,Palette,Pencil} from "lucide-react";
+import {ASSET_TYPE_DRAG,DayRail,useToast,dayAnchor,FrameStrip,Block,LazyVideo,MosaicGrid,MosaicTile,ResultTile,mosaicAccent,Button,ClampText,ConfirmDialog,ContactSheet,Dialog,IconButton,MediaViewer,MediaViewerInfo,Notice,EmptyState,HistoryItem,LinkButton,MediaCard,Meta,PerformanceMirror,ResultGrid,SectionHeader,SegmentedTabs,StatusText,Toolbar,UploadSlot,UploadTile,densityColumnsClass,useDensity,type ContactSheetItem} from "../ds";
 
 import {assetThumbUrl,assetUrl,workspacePath,type Asset,type AssetPage,type Call,type Project,type Run,type User,type Worker,type Workspace} from "./api";
 import type {LibraryScreen} from "./navigation";
@@ -70,6 +70,15 @@ const ModelPreview=lazy(()=>import("../image/OrbitPreview").then(m=>({default:m.
 export function TeamRuns({workspace,project,call,canEdit,authorized,version,user,titles={},capabilityId,hero,outputAction,examples,feed,linkedRunId}:{/** The shared feed of this kind (all video or all image results) instead of one workflow's runs. */feed?:FeedScope;linkedRunId?:string;/** Example media under the real runs, so a tool never looks empty. */examples?:"video"|"image";workspace:Workspace;project:Project;call:Call;canEdit:boolean;authorized:boolean;version:number;user:User;titles?:RunTitles;/** Beside a composer: show only this workflow's runs. */capabilityId?:string|string[];/** The tool's encouraging line above its results; it is given the newest finished clip. */hero?:(latest?:string)=>ReactNode;outputAction?:(run:Run)=>ReactNode}){
   return <ProjectRuns key={`${workspace.id}:${project.id}:${authorized}:${feed?`feed:${feed.kind}`:[capabilityId??""].flat().join(",")}`} {...{workspace,project,call,canEdit,authorized,version,user,titles,capabilityId,hero,outputAction,examples,feed,linkedRunId}}/>;
 }
+/** Adds a video to this project's Film Studio timeline (the studio project is created on the first clip). */
+function useAddToStudio(call:Call,workspaceId:string,projectId:string){
+  const toast=useToast();
+  return async(assetId:string,name:string)=>{
+    try{await call(workspacePath(workspaceId,`h3-editor/project/${encodeURIComponent(`cf-${projectId}`)}/import`),"POST",{assetId,projectId,name:name.replace(/\.[a-z0-9]+$/i,"").slice(0,120)||"Clip"});toast("Added to Film Studio");}
+    catch(error){toast((error as Error).message);}
+  };
+}
+
 function ProjectRuns({workspace,project,call,canEdit,authorized,version,user,titles={},capabilityId,hero,outputAction,examples,feed,linkedRunId}:Parameters<typeof TeamRuns>[0]){
   const storyboard=useStoryboardFeed(call,workspace.id,project.id,authorized,!!feed,version),[onlyCurrent,setOnlyCurrent]=useState(false);
   const [feedAssets,setFeedAssets]=useState<Asset[]>([]),[feedAssetError,setFeedAssetError]=useState("");
@@ -78,6 +87,7 @@ function ProjectRuns({workspace,project,call,canEdit,authorized,version,user,tit
     void read();return()=>{current=false;clearTimeout(timer);};
   },[authorized,call,workspace.id,project.id,feed?.kind,version]);
   const [keepText,setKeepText]=useState<{runId:string;pictureId:string}>();
+  const addToStudio=useAddToStudio(call,workspace.id,project.id);
   const recreate=useRecreate();
   // The list holds the short record; what a run was made from comes with its own record, fetched when its details open.
   const [detail,setDetail]=useState<Record<string,Run>>({});
@@ -192,6 +202,7 @@ function ProjectRuns({workspace,project,call,canEdit,authorized,version,user,tit
       {/* The tool's own next steps (Edit image, Use in video) live here, in the result's details, never under the content. */}
       {run.state==="succeeded"&&outputAction?.(run)}
       {canEdit&&run.state==="succeeded"&&full.invocation&&full.worker_id&&full.invocation.controls.sharpen!==true&&capabilityHasControl(run.capability_id,"sharpen")&&<Button variant="secondary" disabled={canceling===run.id} onClick={()=>void sharpen(full)}>Sharpen this take</Button>}
+      {canEdit&&user.localSingleUser&&run.state==="succeeded"&&output?.content_type?.startsWith("video/")&&<Button variant="secondary" onClick={()=>void addToStudio(output.id,output.name)}>Add to Film Studio</Button>}
       {/* Keep text: lettering from the start picture tracked onto every frame (local app only, Pad DOC-1343). */}
       {canEdit&&user.localSingleUser&&run.state==="succeeded"&&full.invocation?.inputs.start_image&&output?.content_type?.startsWith("video/")&&<Button variant="secondary" onClick={()=>setKeepText({runId:run.id,pictureId:full.invocation!.inputs.start_image})}>Keep text</Button>}
       <Button variant="ghost" disabled={run.state==="pending"} onClick={()=>void exportGraph(run)}>Export workflow</Button>
@@ -236,7 +247,7 @@ function ProjectRuns({workspace,project,call,canEdit,authorized,version,user,tit
     {pickedOutputs.length>0&&<Toolbar><Button variant="secondary" onClick={()=>setSheetOpen(true)}>Contact sheet · {pickedOutputs.length}</Button><Button variant="ghost" onClick={()=>{setPicked({});setSheetOpen(false);}}>Clear</Button></Toolbar>}
     {feedAssetError&&<Notice priority={20} consequence title="Library couldn't be updated" details={feedAssetError}>The feed shows the last media it read.</Notice>}
     {feed?feedView:examples?<ExampleTiles kind={examples} leading={runTiles} leadingCount={shown.length} videoSources={examples==="video"&&promoReelForCapability(capabilityId)?[...new Set([...FEATURED_VIDEO_EXAMPLES,...SQUAREHEAD_EXAMPLE_VIDEOS,promoReelForCapability(capabilityId)!])]:undefined}/>:<ResultGrid count={shown.length} aspect={0} label="Project runs">{runTiles}</ResultGrid>}
-    {keepText&&<KeepTextDialog open workspaceId={workspace.id} runId={keepText.runId} pictureId={keepText.pictureId} call={call} onClose={()=>setKeepText(undefined)} onDone={()=>setUpdate(v=>v+1)}/>}
+    {keepText&&<KeepTextDialog open workspaceId={workspace.id} projectId={project.id} runId={keepText.runId} pictureId={keepText.pictureId} call={call} onClose={()=>setKeepText(undefined)} onDone={()=>setUpdate(v=>v+1)}/>}
     <Dialog wide open={authorized&&sheetOpen&&sheetItems.length>0} title="Selected results" onClose={()=>setSheetOpen(false)} footer={<Button variant="secondary" onClick={()=>setSheetOpen(false)}>Close</Button>}>
       <ContactSheet items={sheetItems} title={`Selected results · ${project.name}`} fileName={`selected-results-${project.id.slice(0,8)}.png`}/>
     </Dialog>
@@ -273,6 +284,7 @@ export function TeamLibrary({screen,workspace,project,call,canEdit,authorized,ve
   /* A finish output is reachable through its result card and the comparison; the file grid shows the source, not both. */
   const visibleAssets=newestMediaFirst(assets).filter(asset=>isEndResultAsset(asset)&&!generationOf(asset)?.upscale&&(showUnavailable||!unavailable.has(asset.id)));
   const viewableAssets=visibleAssets.filter(asset=>/^(image|video)\//.test(asset.content_type));
+  const addToStudio=useAddToStudio(call,workspace.id,project.id);
   const libraryCard=(asset:Asset)=>{
         const image=asset.content_type.startsWith("image/"),video=asset.content_type.startsWith("video/"),model=asset.content_type==="model/gltf-binary",viewable=image||video||model,src=assetUrl(workspace.id,asset.id);
         const onUnavailable=()=>setUnavailable(old=>old.has(asset.id)?old:new Set([...old,asset.id]));
@@ -280,6 +292,7 @@ export function TeamLibrary({screen,workspace,project,call,canEdit,authorized,ve
           {(viewable||asset.content_type.startsWith("audio/"))&&<IconButton label={`View ${asset.name}`} onClick={()=>{if(model)location.hash=`3d/viewer/${asset.id}`;else setViewing(asset);}}><Eye size={14}/></IconButton>}
           {model&&canEdit&&<><IconButton label="Texture" onClick={()=>{location.hash=`3d/texture/${asset.id}`;}}><Palette size={14}/></IconButton><IconButton label="Mesh tools" onClick={()=>{location.hash=`3d/mesh/${asset.id}`;}}><Boxes size={14}/></IconButton></>}{image&&canEdit&&<IconButton label="Create 3D" onClick={()=>{location.hash=`3d/image/auto/${asset.id}`;}}>3D</IconButton>}{image&&canEdit&&<IconButton label={`Edit ${asset.name}`} onClick={()=>{location.hash=`imageedit/${asset.id}`;}}><Pencil size={14}/></IconButton>}
           {video&&canEdit&&videoEditReady&&<IconButton label={`Edit ${asset.name}`} onClick={()=>onEditVideo(asset)}><Pencil size={14}/></IconButton>}
+          {video&&canEdit&&user.localSingleUser&&asset.project_id===project.id&&<IconButton label="Add to Film Studio" onClick={()=>void addToStudio(asset.id,asset.name)}><Clapperboard size={14}/></IconButton>}
           <LinkButton variant="secondary" aria-label={`Download ${asset.name}`} href={assetUrl(workspace.id,asset.id,true)}><Download size={14}/></LinkButton>
         </>} onRemove={canEdit&&deletingId!==asset.id?()=>{setDeleteError("");setDeleting(asset);}:undefined} removeLabel={`Delete ${asset.name}`}/>;
 };

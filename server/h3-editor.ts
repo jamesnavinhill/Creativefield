@@ -121,7 +121,13 @@ export async function h3EditorRoutes(app: FastifyInstance, pool: Pool, store: Di
     if (!asset) throw new HttpError(404, "That clip is not in this project");
     if (asset.media_type !== "video") throw new HttpError(400, "Only a video can become an H3 clip");
     const origin = await workerFor(workspaceId);
-    const project = await workerJson(origin, `/h3take/api/project/${encodeURIComponent(name)}`) as {timeline?: unknown};
+    /* The project's Film Studio may not exist yet (a new project, or the first clip sent to it): create it, named
+       as the Film Studio opens it, instead of refusing the clip. Only this name is created; nothing else changes. */
+    const project = await workerJson(origin, `/h3take/api/project/${encodeURIComponent(name)}`).catch(async error => {
+      if (!(error instanceof HttpError) || error.statusCode !== 404) throw error;
+      await workerJson(origin, "/h3take/api/projects", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({name})});
+      return workerJson(origin, `/h3take/api/project/${encodeURIComponent(name)}`);
+    }) as {timeline?: unknown};
     const start = frameAfter(project, body.afterClip);
     const form = new FormData();
     form.append("name", body.name);

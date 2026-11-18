@@ -362,6 +362,7 @@ export default function Showcase() {
 
       <Section title="Color">
         <div className="ds-crophandle-demo"><CropHandles box={{x:0,y:0,w:100,h:100}} viewport={{x:40,y:40,w:160,h:100}} width={100} height={100} onStart={()=>{}} onMove={()=>{}} onEnd={()=>{}} onCancel={()=>{}} onNudge={()=>{}}/><Meta>Crop handles · outside the image · drag or arrow keys</Meta></div>
+        <div className="ds-crophandle-demo"><CropHandles compact box={{x:30,y:35,w:40,h:20}} viewport={{x:40,y:40,w:160,h:100}} width={100} height={100} onStart={()=>{}} onMove={()=>{}} onEnd={()=>{}} onCancel={()=>{}} onNudge={()=>{}}/><Meta>Crop handles · compact: a frame marking an area on a picture (Keep text)</Meta></div>
         <TransformDemo/>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
           {SWATCHES.map(([v, name]) => (

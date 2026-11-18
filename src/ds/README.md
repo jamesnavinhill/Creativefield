@@ -209,7 +209,7 @@ Live reference: run `npm run dev` and open `http://localhost:5173/#ds`.
 | `CodeLine` | A shell command with a Copy button, for notices that tell the user what to run |
 | `Graph`, `Node`, `Socket`, `Widget`, `Wire`, `socketY` | ComfyUI-style node view: typed, color-coded sockets, widgets, and animated wires for running links |
 
-Crop edge controls use CropHandles (Showcase): fixed screen targets outside the image, pointer capture and keyboard nudges; crop geometry remains in the editor.
+Crop edge controls use CropHandles (Showcase): fixed screen targets outside the image, pointer capture and keyboard nudges; crop geometry remains in the editor. To mark a small area on a picture (Keep text), use `CropHandles compact`: the frame lies exactly on the area with four small corner handles; frames not being edited pass `handles={false}`.
 
 TransformHandles (Showcase) provides fixed-size corner, move and rotation targets for proportional layer transforms; pointer capture, arrow-key nudges, Enter/Apply and Escape/Cancel. DockStack can be inert while a canvas transaction owns editing.
 

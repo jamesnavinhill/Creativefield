@@ -2016,6 +2016,10 @@ button.ds-castcard__main { cursor: pointer; }
 /* A thin rounded frame stands a little way off the picture, so the handles never sit on it. */
 .ds-cropframe { position: absolute; margin: calc(-1 * var(--space-3)); padding: 0; box-sizing: content-box; border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent); border-radius: var(--radius-md); pointer-events: none; box-shadow: var(--accent-glow); }
 .ds-crophandle:focus-visible { outline: none; }
+/* Compact: a frame that marks an area on a picture. It lies exactly on the area, corners only, small dots. */
+.ds-crophandles[data-compact] .ds-cropframe { margin: 0; box-sizing: border-box; border-radius: var(--radius-sm); }
+.ds-crophandles[data-compact] .ds-crophandle { width: var(--space-5); height: var(--space-5); }
+.ds-crophandles[data-compact] .ds-crophandle::after { inset: calc(50% - var(--space-1) + 1px); }
 .ds-crophandle[data-handle="nw"], .ds-crophandle[data-handle="se"] { cursor: nwse-resize; }
 .ds-crophandle[data-handle="ne"], .ds-crophandle[data-handle="sw"] { cursor: nesw-resize; }
 .ds-crophandle[data-handle="n"], .ds-crophandle[data-handle="s"] { cursor: ns-resize; }
