@@ -1,10 +1,11 @@
 {
   "schemaVersion": 2,
   "id": "minimax-h3-image-t2i",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "title": "MiniMax H3 Image text to image",
   "category": "image",
-  "description": "Local text-to-image with MiniMax H3-Image (33B, 6 steps, no CFG) from the pruned Q4_K_M GGUF conversion. One native pass: Size 4, 6, 8, 12 or 20 MP, default 12. Runs on the H3 worker (ComfyUI 0.45.1); 4, 8, 12 and 20 MP runs are verified.",
+  "description": "Local text-to-image with MiniMax H3-Image (33B, 6 steps, no CFG) from the pruned Q4_K_M GGUF conversion. One native pass: Size 4, 6, 8, 12 or 20 MP, default 12. Runs on the H3 worker (ComfyUI 0.45.1); 4, 8, 12 and 20 MP runs are verified. Sampled with H3 Image EasyFix (Steering 0.7, re-noise plan SRRRRS at 0.9) for cleaner skin, less grain and fewer crushed blacks.",
+  "stillTone": "open_crushed_shadows",
   "inputs": [],
   "outputs": [
     {
@@ -81,7 +82,7 @@
       "default": 42,
       "binding": {
         "node": "7",
-        "field": "seed"
+        "field": "noise_seed"
       }
     }
   ],
@@ -126,18 +127,6 @@
           "instructions": "Install a ComfyUI version providing VAELoader."
         },
         {
-          "id": "node:ConditioningZeroOut",
-          "kind": "node",
-          "name": "ConditioningZeroOut",
-          "instructions": "Install a ComfyUI version providing ConditioningZeroOut."
-        },
-        {
-          "id": "node:KSampler",
-          "kind": "node",
-          "name": "KSampler",
-          "instructions": "Install a ComfyUI version providing KSampler."
-        },
-        {
           "id": "node:VAEDecode",
           "kind": "node",
           "name": "VAEDecode",
@@ -172,6 +161,42 @@
           "location": "vae",
           "source": "https://huggingface.co/Comfy-Org/MiniMax-H3-Image/blob/main/vae/minimax_h3_image_vae_fp16.safetensors",
           "instructions": "Add the 24-channel MiniMax H3-Image VAE. The video VAE and SD or Flux VAEs do not work."
+        },
+        {
+          "id": "node:RandomNoise",
+          "kind": "node",
+          "name": "RandomNoise",
+          "instructions": "Install a ComfyUI version providing RandomNoise."
+        },
+        {
+          "id": "node:BasicGuider",
+          "kind": "node",
+          "name": "BasicGuider",
+          "instructions": "Install a ComfyUI version providing BasicGuider."
+        },
+        {
+          "id": "node:ManualSigmas",
+          "kind": "node",
+          "name": "ManualSigmas",
+          "instructions": "Install a ComfyUI version providing ManualSigmas."
+        },
+        {
+          "id": "node:SamplerCustomAdvanced",
+          "kind": "node",
+          "name": "SamplerCustomAdvanced",
+          "instructions": "Install a ComfyUI version providing SamplerCustomAdvanced."
+        },
+        {
+          "id": "node:H3ImageSampler",
+          "kind": "node",
+          "name": "H3ImageSampler",
+          "instructions": "Install the reviewed H3 Image EasyFix pack (h3_image_easyfix_reviewed, PedroMarinhoDev/ComfyUI-H3-Image-EasyFix a73c535) on the local worker."
+        },
+        {
+          "id": "node:H3ImageSteering",
+          "kind": "node",
+          "name": "H3ImageSteering",
+          "instructions": "Install the reviewed H3 Image EasyFix pack (h3_image_easyfix_reviewed, PedroMarinhoDev/ComfyUI-H3-Image-EasyFix a73c535) on the local worker."
         }
       ],
       "evidence": [
@@ -184,7 +209,7 @@
     "hosted": "planned"
   },
   "licenses": {
-    "software": "ComfyUI core: GPL-3.0. Comfy-Org workflow_templates: MIT. Integration license follows this repository; full dependency audit pending.",
+    "software": "ComfyUI core: GPL-3.0. Comfy-Org workflow_templates: MIT. Integration license follows this repository; full dependency audit pending. H3 Image EasyFix nodes (re-noise sampler, steering): Apache-2.0.",
     "weights": [
       {
         "name": "MiniMax-H3-Image and the community GGUF conversion",
@@ -208,6 +233,11 @@
       "url": "https://huggingface.co/MiniMaxAI/MiniMax-H3-Image",
       "observedAt": "2026-11-10",
       "kind": "research"
+    },
+    {
+      "url": "https://github.com/PedroMarinhoDev/ComfyUI-H3-Image-EasyFix",
+      "observedAt": "2026-11-20",
+      "kind": "implementation"
     }
   ],
   "tickets": [],

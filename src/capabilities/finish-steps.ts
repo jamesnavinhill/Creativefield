@@ -36,6 +36,9 @@ export function finishRows<T extends FinishManifest>(ready:readonly T[]):FinishR
     row.order=Math.min(row.order,step.order);
     rows.set(step.task,row);
   }
+  /* The option a manifest marks as the default leads its row, so a first visit picks it whatever the catalogue order. */
+  const leads=(option:FinishOption)=>byOption.get(`${option.step}\u0000${option.option}`)!.some(pack=>finishRoleOf(pack)!.defaultOption)?0:1;
+  for(const row of rows.values())row.options.sort((a,b)=>leads(a)-leads(b));
   return [...rows.values()].sort((a,b)=>a.order-b.order);
 }
 

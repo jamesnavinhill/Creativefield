@@ -1,6 +1,6 @@
 import type {CapabilityManifestV2,Invocation,WorkerInventory} from "../capabilities/types";
 import {afterResponse,answerLocally,restoreFor,trackWrite} from "./browser-library";
-export type User={id:string;email:string;localSingleUser?:boolean;/** A hosted try-out visitor: their own guest workspace, no password, Comfy Cloud with their own key. */guest?:boolean};
+export type User={id:string;email:string;localSingleUser?:boolean;/** A hosted try-out visitor: their own guest workspace, no password, Comfy Cloud with their own key. */guest?:boolean;/** Hosted: this server offers real accounts (Supabase). */accounts?:boolean;/** Hosted: this guest is a signed-in account. */account?:boolean};
 /** A visitor's own Comfy Cloud key stays in this browser. It goes with every API call in one header and the server only holds it in memory. */
 export const CLOUD_KEY_STORAGE="creativefield.comfy-cloud-key";
 export function storedCloudKey():string{try{return localStorage.getItem(CLOUD_KEY_STORAGE)??"";}catch{return "";}}

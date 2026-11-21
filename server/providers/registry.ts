@@ -4,6 +4,7 @@ import {assertIndependentProvider,forbiddenProvider} from "../../src/capabilitie
 import type {CapabilityManifestV2} from "../../src/capabilities/types";
 import type {DirectAdapter,DirectBinding} from "./types";
 import {routerRegistrations} from './comfy-router';
+import {bflRegistrations} from './bfl';
 
 export function approvedOrigin(value:string):string {
   let url:URL;try{url=new URL(value);}catch{throw new Error("Invalid provider origin");}
@@ -50,4 +51,4 @@ export class DirectRegistry {
   get size(){return this.#entries.size;}
 }
 /** Reviewed Router contracts; qualifications are mocked protocol checks, not output-quality claims. */
-export const productionDirectRegistry=new DirectRegistry(routerRegistrations);
+export const productionDirectRegistry=new DirectRegistry([...routerRegistrations,...bflRegistrations]);

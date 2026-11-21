@@ -4,22 +4,24 @@ import { hashPassword, hashToken, newId } from "./crypto";
 import { transaction } from "./db";
 
 export class HttpError extends Error { constructor(readonly statusCode: number, message: string) { super(message); } }
-export type Principal = { id: string; email: string };
+export type Principal = { id: string; email: string; account?: boolean };
 /** Every hosted guest's made-up address ends in this. */
 export const GUEST_DOMAIN = "@guest.creativefield";
 export type Role = "admin" | "creator" | "viewer";
 export async function principal(pool: Pool, request: FastifyRequest): Promise<Principal> {
   const token = request.cookies.cf_session;
   if (!token || token.length > 128) throw new HttpError(401, "Sign in to your team workspace");
-  const result = await pool.query("SELECT u.id,u.email FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()", [hashToken(token)]);
+  const result = await pool.query("SELECT u.id,u.email,(u.supabase_id IS NOT NULL) AS account FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()", [hashToken(token)]);
   if (!result.rows[0]) throw new HttpError(401, "Session expired");
   /* A hosted try-out (GUEST_PER_BROWSER=1) only knows guests: a session from the old shared demo starts over as a guest. */
   if (process.env.GUEST_PER_BROWSER === "1") {
-    if (!String(result.rows[0].email).endsWith(GUEST_DOMAIN)) throw new HttpError(401, "Session expired");
+    /* A guest that created an account is linked to Supabase and signs in as itself. */
+    if (!result.rows[0].account && !String(result.rows[0].email).endsWith(GUEST_DOMAIN)) throw new HttpError(401, "Session expired");
     /* An idle guest is deleted after a day (guest-cleanup.ts); a visit counts, marked at most every five minutes. */
     await pool.query("UPDATE users SET last_seen_at=now() WHERE id=$1 AND (last_seen_at IS NULL OR last_seen_at<now()-interval '5 minutes')", [result.rows[0].id]);
   }
-  return result.rows[0];
+  const { account, ...user } = result.rows[0];
+  return account ? { ...user, account: true } : user;
 }
 export async function ensureLocalUser(pool: Pool): Promise<Principal> {
   return transaction(pool, async client => {

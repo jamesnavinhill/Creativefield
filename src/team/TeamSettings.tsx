@@ -4,11 +4,13 @@ import {Button,CodeLine,ConfirmDialog,DataRow,Dialog,EmptyState,FormSection,Link
 import {aiTextStateLabel,chooseAiText,loadAiText,workspacePath,type AiTextSettings,type Call,type User,type Worker,type Workspace} from "./api";
 import {audienceOf,settingsLabel,workspaceFacts} from "./audience";
 import {GITHUB_URL} from "./Guide";
+import {OWN_KEY_NAMES,OWN_KEY_PROVIDERS} from "./own-keys";
 import type {SettingsNavigation,SettingsTabId} from "./navigation";
 type Key={id:string;provider_id:string;updated_at:string};
 type Member={id:string;email:string;role:string};
 type Invite={id:string;email:string;role:string;expires_at:string;used_at:string|null};
-const providers=["comfy-router","wan","kling","minimax","ltx","google-veo","beeble"];
+const providers=OWN_KEY_PROVIDERS.map(p=>p.id) as string[];
+const providerName=(id:string)=>OWN_KEY_NAMES[id]??id;
 /** Comfy Cloud answers only at that address, and the server enforces the same rule. */
 export function workerKind(origin:string):"local"|"cloud"{
   try{return new URL(origin).origin==="https://cloud.comfy.org"?"cloud":"local";}catch{return "local";}
@@ -42,9 +44,9 @@ export function TeamSettings({initialSection,navigation,onClose,workspace,user,w
       {ai?.providers.map(p=>{const active=ai.active===p.id;return <DataRow key={p.id} title={p.label} meta={<Meta>{p.detail}</Meta>} status={<StatusText tone={active?"active":p.state==="ready"?"ok":"warn"}>{active?"Active":aiTextStateLabel(p.state)}</StatusText>} actions={!active&&p.state==="ready"?<Button variant="secondary" disabled={busy} onClick={()=>void action(()=>chooseAiText(call,workspace.id,p.id),`AI text now runs on ${p.label}`)}>Use</Button>:undefined}/>;})}
     </>)}
     {tab==="providers"&&<>
-      <Notice tone="info" title="Cloud provider keys">Stored encrypted in this workspace. Comfy Router connects hosted models to your Comfy credit balance. Other saved providers need a compatible adapter.</Notice>
-      {keys.map(k=><DataRow key={k.id} title={k.provider_id==="comfy-router"?"Comfy Router":k.provider_id} meta={<Meta parts={[`Updated ${new Date(k.updated_at).toLocaleString()}`]}/>} status={<StatusText tone="ok">Configured</StatusText>} actions={<Button variant="ghost" disabled={busy} onClick={()=>setConfirm({title:"Remove this credential?",text:`The stored ${k.provider_id} credential is deleted from this server. Jobs that use it will stop working until a new one is saved.`,label:"Remove credential",run:()=>void action(()=>call(workspacePath(workspace.id,`provider-connections/${k.id}`),"DELETE"),"Credential removed")})}>Remove</Button>}/>)}
-      <form className="cf-form" onSubmit={e=>{e.preventDefault();void action(async()=>{await call(workspacePath(workspace.id,"provider-connections"),"POST",{providerId:provider,secret});setSecret("");},"Credential saved. Its value cannot be read back.");}}><Row label="Provider" display={provider==="comfy-router"?"Comfy Router":provider} value={provider} onChange={value=>{setProvider(value);setSecret("");}} options={providers.map(p=>({value:p,label:p==="comfy-router"?"Comfy Router":p}))} disabled={busy}/><TextField label="New credential" hint="Stored encrypted. Its value cannot be read back." required type="password" autoComplete="new-password" value={secret} onChange={setSecret}/><Button variant="primary" type="submit" disabled={busy||!secret}>Save / replace credential</Button></form>
+      <Meta>Bring your own keys: a model runs on its provider's own key when you saved one, otherwise on Comfy credits. Keys are stored encrypted and cannot be read back.</Meta>
+      {keys.map(k=><DataRow key={k.id} title={providerName(k.provider_id)} meta={<Meta parts={[`Updated ${new Date(k.updated_at).toLocaleString()}`]}/>} status={<StatusText tone="ok">Configured</StatusText>} actions={<Button variant="ghost" disabled={busy} onClick={()=>setConfirm({title:"Remove this credential?",text:`The stored ${k.provider_id} credential is deleted from this server. Jobs that use it will stop working until a new one is saved.`,label:"Remove credential",run:()=>void action(()=>call(workspacePath(workspace.id,`provider-connections/${k.id}`),"DELETE"),"Credential removed")})}>Remove</Button>}/>)}
+      <form className="cf-form" onSubmit={e=>{e.preventDefault();void action(async()=>{await call(workspacePath(workspace.id,"provider-connections"),"POST",{providerId:provider,secret});setSecret("");},"Credential saved. Its value cannot be read back.");}}><Row label="Provider" display={providerName(provider)} value={provider} onChange={value=>{setProvider(value);setSecret("");}} options={providers.map(p=>({value:p,label:providerName(p)}))} disabled={busy}/><TextField label={`${providerName(provider)} API key`} hint={OWN_KEY_PROVIDERS.find(p=>p.id===provider)?.hint} required type="password" autoComplete="new-password" value={secret} onChange={setSecret}/><Button variant="primary" type="submit" disabled={busy||!secret}>Save key</Button>{(()=>{const p=OWN_KEY_PROVIDERS.find(x=>x.id===provider);return p&&<LinkButton variant="ghost" href={p.keyUrl} target="_blank" rel="noreferrer">{`Get a ${p.name} key`}</LinkButton>;})()}</form>
     </>}
     {tab==="members"&&<>
       {members.map(m=><DataRow key={m.id} title={m.email} meta={<Meta parts={[m.role]}/>}/>)}

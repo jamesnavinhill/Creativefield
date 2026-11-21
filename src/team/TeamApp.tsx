@@ -6,6 +6,7 @@ import {GettingStarted} from "./GettingStarted";
 import {OnboardingGate} from "./OnboardingGate";
 import {Welcome} from "./Welcome";
 import {CloudSignIn,reopenCloudSignIn,type CloudAccountFacts} from "./CloudSignIn";
+import {AccountDialog,finishAccountRedirect} from "./AccountDialog";
 import {CloudRunDialog,CLOUD_PLAN_LINE,type CloudRunDialogKind} from "./CloudRunDialog";
 import {Guide} from "./Guide";
 import {SwapThingPanel} from "./SwapThingPanel";
@@ -125,19 +126,20 @@ export default function TeamApp(){
     catch(e){if(e instanceof ApiError){if(guestTab.current&&(e.status===401||e.status===403))void resync.current().catch(()=>undefined);else if(e.status===401)setAuthRequired(true);if(e.status===0)setOffline(true);}throw e;}
   },[]);
   const signIn=useCallback(async()=>{
+    await finishAccountRedirect().catch(e=>setError((e as Error).message));
     const account=await request<User>("/auth/me"),memberships=await request<Workspace[]>("/workspaces");
     if(account.guest)await enableBrowserLibrary();
     guestTab.current=!!account.guest;setUser(account);setWorkspaces(memberships);setWorkspaceId(id=>memberships.some(w=>w.id===id)?id:memberships[0]?.id??"");setAuthRequired(false);setOffline(false);setError("");setLoading(false);
   },[]);
   resync.current=signIn;
   useEffect(()=>{let active=true;void signIn().catch(e=>{if(active){if(!(e instanceof ApiError)||e.status!==401)setError((e as Error).message);setLoading(false);}});return()=>{active=false;};},[signIn]);
-  const signOut=useCallback(async()=>{await call("/auth/logout","POST");setUser(null);setWorkspaces([]);setWorkspaceId("");setAuthRequired(false);},[call]);
+  const signOut=useCallback(async()=>{await call("/auth/logout","POST");/* A hosted account signs out to a fresh guest. */if(guestTab.current){await signIn();return;}setUser(null);setWorkspaces([]);setWorkspaceId("");setAuthRequired(false);},[call,signIn]);
   const closeReauth=useCallback(()=>{},[]);
   const workspace=workspaces.find(w=>w.id===workspaceId);
   if(loading)return <div className="cf-auth"><ShimmerText>CreativeField</ShimmerText></div>;
   if(!user)return <AuthPanel onSignedIn={signIn} serverError={error||undefined} onRetry={()=>void signIn().catch(e=>setError((e as Error).message))}/>;
   return <ToastHost><ProblemHost>
-    {workspace?<TeamWorkspace key={`${user.id}:${workspace.id}`} user={user} workspace={workspace} workspaces={workspaces} onWorkspace={setWorkspaceId} call={call} authorized={!authRequired} offline={offline} onSignOut={signOut} onReconnect={()=>void signIn().catch(e=>setError((e as Error).message))}/>:<div className="cf-auth"><EmptyState title="No workspace access" text={noWorkspaceText(audienceOf(user))} action={<Button variant="secondary" onClick={()=>void signOut()}>Sign out</Button>}/></div>}
+    {workspace?<TeamWorkspace key={`${user.id}:${workspace.id}`} user={user} workspace={workspace} workspaces={workspaces} onWorkspace={setWorkspaceId} call={call} authorized={!authRequired} offline={offline} onSignOut={signOut} onAccount={signIn} onReconnect={()=>void signIn().catch(e=>setError((e as Error).message))}/>:<div className="cf-auth"><EmptyState title="No workspace access" text={noWorkspaceText(audienceOf(user))} action={<Button variant="secondary" onClick={()=>void signOut()}>Sign out</Button>}/></div>}
     <Dialog open={authRequired&&!user.localSingleUser} title="Sign in to continue" onClose={closeReauth}><Notice inline title="Your session has expired">Your draft is preserved. Signing in below keeps it, and you queue explicitly when ready.</Notice><AuthPanel embedded onSignedIn={signIn}/></Dialog>
   </ProblemHost></ToastHost>;
 }
@@ -153,7 +155,7 @@ const importedHint=(m:Catalogue[number])=>{const image=m.inputs.some(p=>p.type==
 const menuTitle=(m:Catalogue[number])=>m.title.split(" (")[0]||m.id.replace(/^imported-/,"").replace(/-/g," ");
 const isImageCapability=(manifest:Catalogue[number])=>isImageWorkflow(manifest)&&(isSelectedImageModel(manifest.id)||isImported(manifest.id));
 
-function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,offline,onSignOut,onReconnect}:{user:User;workspace:Workspace;workspaces:Workspace[];onWorkspace:(id:string)=>void;call:Call;authorized:boolean;offline:boolean;onSignOut:()=>Promise<void>;onReconnect:()=>void}){
+function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,offline,onSignOut,onAccount,onReconnect}:{user:User;workspace:Workspace;workspaces:Workspace[];onWorkspace:(id:string)=>void;call:Call;authorized:boolean;offline:boolean;onSignOut:()=>Promise<void>;onAccount:()=>Promise<void>;onReconnect:()=>void}){
   /* On a phone the top bar keeps only the job queue and the account; Run on and the rest move into its More sheet. */
   const phone=usePhone();
   const [routeHash,setRouteHash]=useState(location.hash);
@@ -223,7 +225,7 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
   },[addressWorkflow,catalogue,route]);
   intentScope.current=`${workspace.id}:${project?.id??""}`;
   /* The Comfy account behind the cloud key, shown in the user menu. */
-  const [account,setAccount]=useState<CloudAccountFacts|null>(null),[cloudSignIn,setCloudSignIn]=useState(reopenCloudSignIn),[guide,setGuide]=useState(false);
+  const [account,setAccount]=useState<CloudAccountFacts|null>(null),[cloudSignIn,setCloudSignIn]=useState(reopenCloudSignIn),[accountOpen,setAccountOpen]=useState(false),[guide,setGuide]=useState(false);
   useEffect(()=>{if(!authorized)return;let live=true;void call<NonNullable<typeof account>>(workspacePath(workspace.id,"cloud-account")).then(a=>{if(live)setAccount(a);}).catch(()=>{});return()=>{live=false;};},[authorized,workspace.id,call]);
   const cloudWorker=workers.find(isCloudWorker),runWorkers=targetWorkers(workers,runOn==="router"?"local":runOn),cloudConsentKey=`comfyfield.cloud-consent:v1:${user.id}:${workspace.id}`;
   useEffect(()=>{if(runOn==="cloud"&&!cloudWorker){setRunOn("local");setCloudDialog(null);}},[runOn,cloudWorker]);
@@ -251,6 +253,7 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
     hash:routeHash,
     audience:workspaceAudience,
     localSingleUser:user.localSingleUser,
+    hostedAccount:!!user.account,
     workspaceAdmin:workspace.role==="admin",
     hasProject:!!project,
     canCreate,
@@ -727,7 +730,8 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
       ...(known?{downloadHref:assetUrl(workspace.id,known,true)}:{}),
       ...(known?{generation:async()=>{
         const asset=await call<Asset>(workspacePath(workspace.id,`assets/${encodeURIComponent(known)}`));
-        const generated=asset.metadata?.generatedBy as {producerRunId?:unknown;runId?:unknown}|undefined;
+        // Images record their run under metadata.generation (execution.ts); other media under generatedBy.
+        const generated=(asset.metadata?.generatedBy??asset.metadata?.generation) as {producerRunId?:unknown;runId?:unknown}|undefined;
         let runId=generated?.producerRunId??generated?.runId;
         if(typeof runId!=="string"){
           const runs=await call<Run[]>(workspacePath(workspace.id,`runs?projectId=${encodeURIComponent(project.id)}`));
@@ -1015,11 +1019,12 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
   const accountActions:Record<AccountAction,UserMenuItem>={
     guide:{id:"guide",label:"How it works",icon:<CircleHelp size={14}/>,onSelect:()=>setGuide(true)},
     settings:{id:"settings",label:settingsLabel(accountAudience),icon:<Settings size={14}/>,onSelect:()=>setSettings("account")},
+    "connect-comfy":{id:"connect-comfy",label:"Add Comfy key",icon:<Sparkles size={14}/>,onSelect:()=>setCloudSignIn(true)},
     "sign-out-comfy":{id:"cloud-out",label:"Sign out of Comfy",icon:<LogOut size={14}/>,onSelect:()=>void signOutCloud()},
     "sign-out":{id:"out",label:"Sign out",icon:<LogOut size={14}/>,onSelect:()=>void onSignOut()},
   };
   const accountControl=accountMenu.kind==="sign-in"
-    ?<Button variant="primary" onClick={()=>setCloudSignIn(true)}>Sign in</Button>
+    ?<Button variant="primary" onClick={()=>user.accounts?setAccountOpen(true):setCloudSignIn(true)}>Sign in</Button>
     :<UserMenu
       initials={accountName.slice(0,1).toUpperCase()}
       name={accountName}
@@ -1044,7 +1049,8 @@ function TeamWorkspace({user,workspace,workspaces,onWorkspace,call,authorized,of
     {workspaceControl}
   </>;
   return <div className="cf-team">
-    <Welcome tools={workspaceMenu.tools} onOpen={openStartTask} onCloud={accountMenu.kind==="sign-in"?()=>setCloudSignIn(true):undefined}/>
+    <Welcome tools={workspaceMenu.tools} onOpen={openStartTask} onCloud={accountMenu.kind==="sign-in"?()=>user.accounts?setAccountOpen(true):setCloudSignIn(true):undefined} cloudLabel={user.accounts?"Create free account":undefined}/>
+    {accountOpen&&<AccountDialog onClose={()=>setAccountOpen(false)} onSignedIn={onAccount} onComfyKey={()=>setCloudSignIn(true)}/>}
     {guide&&<Guide
       hosted={hosted} cloudConnected={!!account?.connected} onClose={()=>setGuide(false)}
       onCloudSignIn={hosted?()=>{setGuide(false);setCloudSignIn(true);}:undefined}

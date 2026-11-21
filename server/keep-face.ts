@@ -19,6 +19,7 @@ import {ComfyAnalysisClient} from "./comfy-analysis-runner";
 import {hashToken, newId} from "./crypto";
 import {transaction} from "./db";
 import {canonical, enqueuePreparedRun, prepareInvocation} from "./run-submission";
+import {TRACK_STRIDE, fadeWeight, planFaceCrop, planFixesSomething, writeCropClip} from "./face-crop";
 import type {DiskStore} from "./storage";
 
 const run = promisify(execFile);
@@ -70,10 +71,20 @@ export function candidateFrames(frameCount: number, count = KEEP_FACE_CANDIDATES
   return [...new Set(Array.from({length: count}, (_, index) => Math.round(index * (frameCount - 1) / (count - 1))))];
 }
 
+/** Frames of the last picture appended to every Keep face source: the graph's loader cuts the sound to the frames it
+ *  loads and the H3 chain then comes up two frames short ("audio window 0:73 exceeds 0:71",). The loader reads
+ *  these extra frames; the render window (clip_seconds) stays the clip's own length. */
+export const SOURCE_TAIL_FRAMES = 2;
+
+/** Far-face pass (face-crop.ts) is parked (, user 2026-11-21): it works (crop, render, paste back), but one
+ *  3 s clip costs 4-9 min of GPU for a small gain. Off until renders are cheaper; the stitch runs only on runs
+ *  that carry invocation.faceCrop, which nothing creates while this is false. */
+export const KEEP_FACE_FAR_PATH = false;
+
 /** Controls for the area-only graph: the whole clip (up to 15 s), the face, 736p. */
 export function keepFaceControls(frameCount: number, seed: number) {
   const seconds = Math.min(MAX_SECONDS, frameCount / FPS);
-  return {prompt: "face", change_to: KEEP_FACE_CHANGE_TO, source_seconds: seconds, clip_seconds: Math.max(2.5, Math.min(MAX_SECONDS, Math.round((seconds + 0.05) * 100) / 100)), resolution: "736p", seed};
+  return {prompt: "face", change_to: KEEP_FACE_CHANGE_TO, source_seconds: Math.min(MAX_SECONDS, (frameCount + SOURCE_TAIL_FRAMES) / FPS), clip_seconds: Math.max(2.5, Math.min(MAX_SECONDS, Math.round((seconds + 0.05) * 100) / 100)), resolution: "736p", seed};
 }
 
 /** Pixel count, box and connected parts of a white-on-black mask, measured on a copy at most 256 px wide. */
@@ -107,7 +118,7 @@ export function neutralGraph(template: ApiGraph, image: string, prefix: string, 
   graph["10"].inputs.image = image;
   Object.assign(graph["5"].inputs, {prompt: KEEP_FACE_NEUTRAL_PROMPT});
   Object.assign(graph["1"].inputs, {aspect_ratio: "3:4 (Portrait Standard)", megapixels: 1});
-  graph["7"].inputs.seed = seed;
+  graph["7"].inputs.noise_seed = seed;
   graph["9"].inputs.filename_prefix = prefix;
   return graph;
 }
@@ -146,6 +157,32 @@ export function wantsKeepFace(manifest: Pick<CapabilityBundle["manifest"], "cont
 export type KeepFaceRun = {id: string; workspace_id: string; project_id: string; worker_id: string; created_by: string; scene?: number | null; shot?: number | null};
 export type KeepFaceOutcome = {runId: string; frame: number} | {skipped: string};
 
+/** Median height of the faces SAM 3 found (0 when none). */
+export function medianFaceHeight(candidates: readonly FaceCandidate[]): number {
+  const heights = candidates.filter(candidate => candidate.box).map(candidate => candidate.box![3] - candidate.box![1]).sort((a, b) => a - b);
+  return heights.length ? heights[Math.floor(heights.length / 2)] : 0;
+}
+
+/** SAM 3 face and eyes masks on the given frames; keeps each frame picture in `pictures` when given. */
+async function detectFaces(comfy: ComfyAnalysisClient, videoFile: string, facts: {width: number; height: number}, frames: number[], runId: string, pictures?: Map<number, Buffer>): Promise<FaceCandidate[]> {
+  const prompts: string[] = [];
+  for (const index of frames) {
+    const png = await frameAt(videoFile, index); pictures?.set(index, png);
+    const name = await comfy.upload(`keep-face-${runId}-${index}.png`, png, "image/png");
+    prompts.push(await comfy.submit(samGraph(name, `keep-face/${runId}-${index}`)));
+  }
+  const done = await comfy.waitAll(prompts, {timeoutMs: 10 * 60_000});
+  const candidates: FaceCandidate[] = [];
+  for (const [position, execution] of done.entries()) {
+    const faceFile = execution.outputs["face:save"]?.[0], eyesFile = execution.outputs["eyes:save"]?.[0];
+    if (execution.status !== "completed" || !faceFile || !eyesFile) continue;
+    const face = await maskStats(await comfy.download(faceFile), facts.width, facts.height);
+    const eyes = await maskStats(await comfy.download(eyesFile), facts.width, facts.height);
+    candidates.push({frame: frames[position], faceArea: face.area, box: face.box, eyes: eyes.parts});
+  }
+  return candidates;
+}
+
 /** Queue the face pass on a finished video run. Called by the executor when the run's Keep face switch is on. */
 export async function queueKeepFace(deps: {pool: Pool; store: DiskStore; catalogue: CapabilityBundle[]}, run: KeepFaceRun, videoAssetId: string): Promise<KeepFaceOutcome> {
   const {pool, store, catalogue} = deps, workspaceId = run.workspace_id;
@@ -162,21 +199,11 @@ export async function queueKeepFace(deps: {pool: Pool; store: DiskStore; catalog
 
   const videoFile = await store.file(workspaceId, video.storage_key), facts = await probe(videoFile);
   const comfy = new ComfyAnalysisClient({origin: worker.origin});
-  const frames = candidateFrames(facts.frames), pictures = new Map<number, Buffer>(), prompts: string[] = [];
-  for (const index of frames) {
-    const png = await frameAt(videoFile, index); pictures.set(index, png);
-    const name = await comfy.upload(`keep-face-${run.id}-${index}.png`, png, "image/png");
-    prompts.push(await comfy.submit(samGraph(name, `keep-face/${run.id}-${index}`)));
-  }
-  const done = await comfy.waitAll(prompts, {timeoutMs: 5 * 60_000});
-  const candidates: FaceCandidate[] = [];
-  for (const [position, execution] of done.entries()) {
-    const faceFile = execution.outputs["face:save"]?.[0], eyesFile = execution.outputs["eyes:save"]?.[0];
-    if (execution.status !== "completed" || !faceFile || !eyesFile) continue;
-    const face = await maskStats(await comfy.download(faceFile), facts.width, facts.height);
-    const eyes = await maskStats(await comfy.download(eyesFile), facts.width, facts.height);
-    candidates.push({frame: frames[position], faceArea: face.area, box: face.box, eyes: eyes.parts});
-  }
+  const pictures = new Map<number, Buffer>();
+  const candidates = await detectFaces(comfy, videoFile, facts, candidateFrames(facts.frames), run.id, pictures);
+  /* A face that is small in the frame goes the far-face way: crop, render big, paste back. Decided on the median
+     face, not the largest: a head turned away reads as a big "face" (all hair) in SAM 3. */
+  if (KEEP_FACE_FAR_PATH && fadeWeight(medianFaceHeight(candidates), facts.height) > 0.01 && candidates.some(candidate => candidate.box)) return await queueFarFace(deps, run, pack, comfy, video, videoFile, facts, key);
   const best = pickFaceFrame(candidates);
   if (!best?.box) return {skipped: `no face of at least ${MIN_FACE_HEIGHT} px was found`};
   const crop = referenceCrop(best.box, facts.width, facts.height);
@@ -198,11 +225,18 @@ export async function queueKeepFace(deps: {pool: Pool; store: DiskStore; catalog
   try {
     let sourceVideoId = video.id;
     const assets: Array<{id: string; name: string; type: "image" | "video"; content: string; file: string | Buffer; metadata: unknown}> = [];
-    if (!facts.audio) {
+    /* The H3 chain refuses sound that does not outlast the picture ("audio window 0:73 exceeds 0:71" on a clip whose
+       sound and picture were both 3.04 s,): the sound is padded with a quarter second of silence; a silent
+       clip gets silence. */
+    {
       const padded = path.join(dir, "with-sound.mp4");
-      await run_(["-v", "error", "-y", "-i", videoFile, "-f", "lavfi", "-t", String(facts.frames / FPS + 0.25), "-i", "anullsrc=r=48000:cl=stereo", "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-movflags", "+faststart", padded]);
+      const tail = ["-vf", `tpad=stop_mode=clone:stop=${SOURCE_TAIL_FRAMES}`, "-c:v", "libx264", "-crf", "12", "-pix_fmt", "yuv420p"];
+      const seconds = String((facts.frames + SOURCE_TAIL_FRAMES) / FPS + 0.25);
+      await run_(facts.audio
+        ? ["-v", "error", "-y", "-i", videoFile, "-map", "0:v", "-map", "0:a:0", ...tail, "-af", "apad", "-t", seconds, "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", padded]
+        : ["-v", "error", "-y", "-i", videoFile, "-f", "lavfi", "-t", seconds, "-i", "anullsrc=r=48000:cl=stereo", "-map", "0:v", "-map", "1:a", ...tail, "-c:a", "aac", "-movflags", "+faststart", padded]);
       sourceVideoId = newId();
-      assets.push({id: sourceVideoId, name: `${path.parse(video.name).name} · with silent sound.mp4`, type: "video", content: "video/mp4", file: padded, metadata: {keepFace: {runId: run.id, role: "source"}}});
+      assets.push({id: sourceVideoId, name: `${path.parse(video.name).name} · ${facts.audio ? "sound padded" : "with silent sound"}.mp4`, type: "video", content: "video/mp4", file: padded, metadata: {keepFace: {runId: run.id, role: "source"}}});
     }
     const referenceId = newId();
     assets.push({id: referenceId, name: `${path.parse(video.name).name} · face reference.png`, type: "image", content: "image/png", file: reference, metadata: {keepFace: {runId: run.id, role: "reference", frame: best.frame, crop, neutral}}});
@@ -231,3 +265,74 @@ export async function queueKeepFace(deps: {pool: Pool; store: DiskStore; catalog
 }
 
 const run_ = (args: string[]) => run(ffmpeg(), args, {timeout: 5 * 60_000, windowsHide: true}).catch(() => { throw new Error("The video could not be prepared for Keep face. Check that FFmpeg is installed."); });
+
+/** Picture roles of the finished run that can give a far face its identity, best first. */
+const IDENTITY_ROLES = ["character_image", "first_frame", "source_image", "reference_image", "image"];
+
+/** The far-face pass (face-crop.ts): SAM 3 tracks the face on every TRACK_STRIDE-th frame, the planned square is cut
+ *  out at 768 px and rendered with the area graph, and the executor pastes the render back (invocation.faceCrop).
+ *  The identity comes from the run's own input picture when it has one; a far face in the clip is too small for it. */
+async function queueFarFace(deps: {pool: Pool; store: DiskStore; catalogue: CapabilityBundle[]}, run: KeepFaceRun, pack: CapabilityBundle, comfy: ComfyAnalysisClient,
+  video: {id: string; name: string}, videoFile: string, facts: {width: number; height: number; frames: number; audio: boolean}, key: string): Promise<KeepFaceOutcome> {
+  const {pool, store, catalogue} = deps, workspaceId = run.workspace_id;
+  const pictures = new Map<number, Buffer>();
+  const tracked = await detectFaces(comfy, videoFile, facts, trackFrames(facts.frames), `${run.id}-track`, pictures);
+  const plan = planFaceCrop(tracked.map(sample => ({frame: sample.frame, box: sample.box})), facts.width, facts.height, facts.frames);
+  if (!plan) return {skipped: "no face was found to track"};
+  if (!planFixesSomething(plan)) return {skipped: "the face is close enough; H3 keeps it as made"};
+
+  const identity = (await pool.query("SELECT i.role,a.id FROM run_inputs i JOIN assets a ON a.id=i.asset_id AND a.workspace_id=i.workspace_id WHERE i.workspace_id=$1 AND i.run_id=$2 AND a.media_type='image'", [workspaceId, run.id])).rows as Array<{role: string; id: string}>;
+  const own = identity.sort((a, b) => (IDENTITY_ROLES.indexOf(a.role) + 99) % 99 - (IDENTITY_ROLES.indexOf(b.role) + 99) % 99)[0]?.id;
+  const largest = tracked.filter(sample => sample.box).sort((a, b) => (b.box![3] - b.box![1]) - (a.box![3] - a.box![1]))[0];
+
+  const dir = await mkdtemp(path.join(os.tmpdir(), "far-face-")), created: string[] = [];
+  try {
+    let source = videoFile;
+    if (!facts.audio) {
+      source = path.join(dir, "with-sound.mp4");
+      await run_(["-v", "error", "-y", "-i", videoFile, "-f", "lavfi", "-t", String(facts.frames / FPS + 0.25), "-i", "anullsrc=r=48000:cl=stereo", "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-movflags", "+faststart", source]);
+    }
+    const cropFile = path.join(dir, "face-crop.mp4");
+    await writeCropClip(source, plan, FPS, cropFile, SOURCE_TAIL_FRAMES);
+    const assets: Array<{id: string; name: string; type: "image" | "video"; content: string; file: string | Buffer; metadata: unknown}> = [];
+    const cropId = newId();
+    assets.push({id: cropId, name: `${path.parse(video.name).name} · face crop.mp4`, type: "video", content: "video/mp4", file: cropFile, metadata: {keepFace: {runId: run.id, role: "face-crop", side: plan.side}}});
+    let referenceId = own;
+    if (!referenceId && largest?.box) {
+      const crop = referenceCrop(largest.box, facts.width, facts.height);
+      const picture = await sharp(pictures.get(largest.frame)!).extract(crop).resize({height: 512, kernel: "lanczos3"}).png().toBuffer();
+      referenceId = newId();
+      assets.push({id: referenceId, name: `${path.parse(video.name).name} · face reference.png`, type: "image", content: "image/png", file: picture, metadata: {keepFace: {runId: run.id, role: "reference", frame: largest.frame, crop}}});
+    }
+    if (!referenceId) return {skipped: "no picture to take the face from"};
+    return await transaction(pool, async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [workspaceId + key]);
+      const again = (await client.query("SELECT id FROM runs WHERE workspace_id=$1 AND idempotency_key=$2", [workspaceId, key])).rows[0] as {id: string} | undefined;
+      if (again) return {runId: again.id, frame: -1};
+      for (const asset of assets) {
+        const saved = await store.put(workspaceId, typeof asset.file === "string" ? createReadStream(asset.file) : Readable.from(asset.file), asset.id);
+        created.push(saved.key);
+        await client.query("INSERT INTO assets(id,workspace_id,project_id,name,media_type,content_type,storage_key,sha256,bytes,created_by,parent_id,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+          [asset.id, workspaceId, run.project_id, asset.name, asset.type, asset.content, saved.key, saved.sha256, saved.bytes, run.created_by, video.id, JSON.stringify(asset.metadata)]);
+      }
+      const body = {projectId: run.project_id, workerId: run.worker_id, idempotencyKey: key, capabilityId: KEEP_FACE_CAPABILITY, version: pack.manifest.version, routeId: "local",
+        inputs: {source_video: cropId, character_image: referenceId}, controls: keepFaceControls(facts.frames, 202), audioPolicy: "preserve" as const};
+      const prepared = await prepareInvocation(client, catalogue, workspaceId, body, store);
+      (prepared.invocation as Record<string, unknown>).faceCrop = {...plan, sourceAssetId: video.id};
+      const queued = await enqueuePreparedRun(client, workspaceId, run.created_by, prepared, key, hashToken(canonical(body)), {scene: run.scene ?? 1, shot: run.shot ?? 1});
+      return {runId: queued.id as string, frame: largest?.frame ?? 0};
+    });
+  } catch (error) {
+    for (const file of created) await store.remove(workspaceId, file).catch(() => {});
+    throw error;
+  } finally {
+    await rm(dir, {recursive: true, force: true}).catch(() => {});
+  }
+}
+
+/** Frames SAM 3 tracks the face on: every TRACK_STRIDE-th frame and the last one. */
+export function trackFrames(frameCount: number): number[] {
+  const frames = Array.from({length: Math.ceil(frameCount / TRACK_STRIDE)}, (_, index) => index * TRACK_STRIDE);
+  if (frames.at(-1) !== frameCount - 1) frames.push(frameCount - 1);
+  return frames;
+}

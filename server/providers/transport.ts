@@ -45,7 +45,7 @@ export function createProviderTransport(source:DirectBinding,authorization:strin
         const address=addresses[0];
         const options:RequestOptions&{autoSelectFamily:false}={method,agent:false,family:4,autoSelectFamily:false,rejectUnauthorized:true,servername:url.hostname,
           lookup:(_hostname,_options,callback)=>callback(null,address,4),
-          headers:{Accept:api?"application/json":"*/*","Accept-Encoding":"identity",...(api&&authorization?{Authorization:authorization}:{}),...(idempotencyKey?{'Idempotency-Key':idempotencyKey}:{}),...(body?{"Content-Type":"application/json","Content-Length":String(body.length)}:{})}};
+          headers:{Accept:api?"application/json":"*/*","Accept-Encoding":"identity",...(api&&authorization?{[binding.provider==='bfl'?'x-key':'Authorization']:authorization}:{}),...(idempotencyKey?{'Idempotency-Key':idempotencyKey}:{}),...(body?{"Content-Type":"application/json","Content-Length":String(body.length)}:{})}};
         request=dependencies.request(url,options,incoming=>{
           response=incoming;
           // busboy augments Readable.on with a narrow 'limit' overload in this project.

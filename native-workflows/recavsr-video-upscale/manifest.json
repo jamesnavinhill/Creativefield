@@ -5,7 +5,7 @@
   "title": "Upscale video, fast 2K (ReCaVSR)",
   "category": "enhance",
   "description": "One-step streaming super-resolution on Wan 2.2: keeps the face and the action of the clip and adds detail fast. Use 2x for a 2K finish; 4x is the model's trained setting but needs four times the output area. Sound and frame rate stay the same.",
-  "role": {"tool": "upscale", "task": "upscale", "option": "fast", "rank": 1, "order": 20, "label": "ReCaVSR 2x", "controls": {"scale": 2}},
+  "role": {"tool": "upscale", "task": "upscale", "option": "fast", "rank": 1, "order": 20, "label": "ReCaVSR 2x", "controls": {"scale": 2}, "defaultOption": true},
   "inputs": [
     {
       "id": "source_video",

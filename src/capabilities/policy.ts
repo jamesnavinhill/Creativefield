@@ -50,6 +50,9 @@ export const APPROVED_LOCAL_CLASSES = new Set([
   // comfy_extras/nodes_minimax_h3.py: text conditioning and a zero latent only (source read 2026-11-10: no network, file,
   // process or eval access). UnetLoaderGGUF is the reviewed gguf_reviewed loader (torch/gguf only, same review pass).
   "MiniMaxH3ImageConditioning", "UnetLoaderGGUF",
+  // H3 Image EasyFix (PedroMarinhoDev/ComfyUI-H3-Image-EasyFix a73c535, Apache-2.0, installed as h3_image_easyfix_reviewed;
+  // source read 2026-11-20: sampler math and a model patch only, loads its own safetensors table, no network, process or eval).
+  "H3ImageSampler", "H3ImageSteering",
   // FIN-01/02 experimental SD 2.1 inpaint pack.
   "CheckpointLoaderSimple", "VAEEncodeForInpaint",
   "DownloadAndLoadSAM2Model", "Sam2Segmentation",

@@ -1,64 +1,186 @@
 {
   "1": {
     "class_type": "ResolutionSelector",
-    "inputs": { "aspect_ratio": "1:1 (Square)", "megapixels": 12, "multiple": 32 },
-    "_meta": { "title": "ResolutionSelector" }
+    "inputs": {
+      "aspect_ratio": "1:1 (Square)",
+      "megapixels": 12,
+      "multiple": 32
+    },
+    "_meta": {
+      "title": "ResolutionSelector"
+    }
   },
   "2": {
     "class_type": "UnetLoaderGGUF",
-    "inputs": { "unet_name": "MiniMax-H3-Image-Pruned-Q4_K_M.gguf" },
-    "_meta": { "title": "UnetLoaderGGUF" }
+    "inputs": {
+      "unet_name": "MiniMax-H3-Image-Pruned-Q4_K_M.gguf"
+    },
+    "_meta": {
+      "title": "UnetLoaderGGUF"
+    }
   },
   "3": {
     "class_type": "CLIPLoader",
-    "inputs": { "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "type": "minimax", "device": "default" },
-    "_meta": { "title": "CLIPLoader" }
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "type": "minimax",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "CLIPLoader"
+    }
   },
   "4": {
     "class_type": "VAELoader",
-    "inputs": { "vae_name": "minimax_h3_image_vae_fp16.safetensors" },
-    "_meta": { "title": "VAELoader" }
+    "inputs": {
+      "vae_name": "minimax_h3_image_vae_fp16.safetensors"
+    },
+    "_meta": {
+      "title": "VAELoader"
+    }
   },
   "5": {
     "class_type": "MiniMaxH3ImageConditioning",
-    "inputs": { "clip": ["3", 0], "vae": ["4", 0], "prompt": "", "width": ["1", 0], "height": ["1", 1] },
-    "_meta": { "title": "MiniMaxH3ImageConditioning" }
-  },
-  "6": {
-    "class_type": "ConditioningZeroOut",
-    "inputs": { "conditioning": ["5", 0] },
-    "_meta": { "title": "ConditioningZeroOut" }
+    "inputs": {
+      "clip": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        0
+      ],
+      "prompt": "",
+      "width": [
+        "1",
+        0
+      ],
+      "height": [
+        "1",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "MiniMaxH3ImageConditioning"
+    }
   },
   "7": {
-    "class_type": "KSampler",
+    "class_type": "RandomNoise",
     "inputs": {
-      "model": ["2", 0],
-      "seed": 42,
-      "steps": 6,
-      "cfg": 1,
-      "sampler_name": "euler",
-      "scheduler": "simple",
-      "positive": ["5", 0],
-      "negative": ["6", 0],
-      "latent_image": ["5", 1],
-      "denoise": 1
+      "noise_seed": 42
     },
-    "_meta": { "title": "KSampler" }
+    "_meta": {
+      "title": "Seed"
+    }
   },
   "8": {
     "class_type": "VAEDecode",
-    "inputs": { "samples": ["7", 0], "vae": ["4", 0] },
-    "_meta": { "title": "VAEDecode" }
+    "inputs": {
+      "samples": [
+        "7x",
+        0
+      ],
+      "vae": [
+        "4",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAEDecode"
+    }
   },
   "9": {
     "class_type": "SaveImageAdvanced",
     "inputs": {
-      "images": ["8", 0],
+      "images": [
+        "8",
+        0
+      ],
       "filename_prefix": "ComfyField/minimax-h3-image-t2i",
       "format": "png",
       "format.bit_depth": "8-bit",
       "format.input_color_space": "sRGB"
     },
-    "_meta": { "title": "SaveImageAdvanced" }
+    "_meta": {
+      "title": "SaveImageAdvanced"
+    }
+  },
+  "7m": {
+    "class_type": "H3ImageSteering",
+    "inputs": {
+      "model": [
+        "2",
+        0
+      ],
+      "strength": 0.7,
+      "steps": "0"
+    },
+    "_meta": {
+      "title": "EasyFix Steering"
+    }
+  },
+  "7g": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": [
+        "7m",
+        0
+      ],
+      "conditioning": [
+        "5",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "BasicGuider"
+    }
+  },
+  "7k": {
+    "class_type": "H3ImageSampler",
+    "inputs": {
+      "plan": "custom",
+      "custom_plan": "SRRRRS",
+      "s_noise": 0.9
+    },
+    "_meta": {
+      "title": "EasyFix Re-Noise Sampler"
+    }
+  },
+  "7s": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.5327739119529724, 0.23200887441635132, 0.0"
+    },
+    "_meta": {
+      "title": "Official 6-step grid"
+    }
+  },
+  "7x": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "7",
+        0
+      ],
+      "guider": [
+        "7g",
+        0
+      ],
+      "sampler": [
+        "7k",
+        0
+      ],
+      "sigmas": [
+        "7s",
+        0
+      ],
+      "latent_image": [
+        "5",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
   }
 }

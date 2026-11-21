@@ -52,7 +52,7 @@ export class DirectExecutionService {
     return decryptProviderSecret(row.encrypted_secret,this.masterKey,{workspaceId:run.workspace_id,providerId:run.binding.provider});
   }
   private async context(run:any,entry:RegisteredAdapter):Promise<AdapterContext>{
-    const secret=await this.credential(run),transport=this.transportFactory(entry.binding,`Bearer ${secret}`);
+    const secret=await this.credential(run),transport=this.transportFactory(entry.binding,entry.binding.provider==='bfl'?secret:`Bearer ${secret}`);
     // Recheck on every network operation, including after a long input preparation.
     const guarded:AdapterTransport={api:async(path,options)=>{await this.credential(run);return transport.api(path,options);},artifact:async(url,max)=>{await this.credential(run);return transport.artifact(url,max);},...(transport.upload?{upload:async(input:OwnedInput)=>{await this.credential(run);return transport.upload!(input);}}:{})};
     return {requestId:run.request_token,binding:entry.binding,transport:guarded};
@@ -76,7 +76,12 @@ export class DirectExecutionService {
   private async dueLater(run:any){await this.pool.query("UPDATE provider_run_bindings SET poll_failures=0,next_poll_at=now()+interval '2 seconds' WHERE workspace_id=$1 AND run_id=$2",[run.workspace_id,run.id]);}
   private async reconcile(run:any){
     const entry=this.registry.resolve(run.manifest,run.route_id);
-    if(!entry||entry.hash!==run.binding_hash){await this.defer(run,messages.binding);return;}
+    if(!entry||entry.hash!==run.binding_hash){
+      /* A run whose pinned adapter changed can no longer be polled or imported; a cancel request ends it
+         instead of leaving a card that counts up forever (seen 2026-11-19 after BFL adapter fixes). */
+      if(run.state==="cancel_requested"){await this.transition(run,"canceled","Canceled. The provider adapter changed after this run started, so its result could not be fetched.");return;}
+      await this.defer(run,messages.binding);return;
+    }
     let context:AdapterContext;
     try{context=await this.context(run,entry);}catch{await this.defer(run,messages.credential);return;}
     if(run.state==="pending"){await this.submit(run,entry,context);return;}
@@ -93,7 +98,7 @@ export class DirectExecutionService {
       await this.transition(run,"queued",null,run.remote_id);
       await this.pool.query("UPDATE provider_run_bindings SET phase='accepted' WHERE workspace_id=$1 AND run_id=$2",[run.workspace_id,run.id]);
     }
-    let observation;try{observation=await entry.adapter.poll(run.remote_id,context);}catch{await this.defer(run,messages.outage);return;}
+    let observation;try{observation=await entry.adapter.poll(run.remote_id,context);}catch(error){const e=error as {code?:string;status?:number;message?:string};console.error(`Provider status check failed for run ${run.id} (${entry.binding.provider}): ${e.code??''} ${e.status??''} ${String(e.message??'').replace(/https?:\/\/\S+/gi,'[address]').slice(0,160)}`);await this.defer(run,messages.outage);return;}
     if(observation?.state==="succeeded"){await this.ingest(run,entry,context);return;}
     if(observation?.state==="canceled"){await this.transition(run,"canceled");return;}
     if(observation?.state==="failed"){await this.transition(run,"failed",observation.reason?`The model refused this request: ${observation.reason}`:"Provider generation failed.");return;}
@@ -151,11 +156,13 @@ export class DirectExecutionService {
   }
   private async ingest(run:any,entry:RegisteredAdapter,context:AdapterContext){
     const saved:Array<{id:string;key:string;sha256:string;bytes:number;mediaType?:string;contentType?:string;metadata?:Record<string,unknown>}>=[];
+    let outputHost='';
     try{
       const outputs=await entry.adapter.outputs(run.remote_id,context);
       if(!Array.isArray(outputs)||!outputs.length||outputs.length>8)throw new Error("Invalid outputs");
       for(const output of outputs){
         if(!['video','image','model3d'].includes(output.mediaType)||!run.manifest.outputs.some((p:any)=>p.type===output.mediaType)||typeof output.url!=="string")throw new Error("Invalid output");
+        try{outputHost=new URL(output.url).hostname;}catch{outputHost='';}
         const download=await context.transport.artifact(output.url,this.store.maxBytes);
         const asset={id:newId(),...await this.store.put(run.workspace_id,download.body)};saved.push(asset);
         const path=await this.store.file(run.workspace_id,asset.key);
@@ -180,7 +187,10 @@ export class DirectExecutionService {
         await client.query("UPDATE runs SET state='succeeded',output_ids=$1,error=NULL,updated_at=now() WHERE workspace_id=$2 AND id=$3",[JSON.stringify(saved.map(a=>a.id)),run.workspace_id,run.id]);
         await client.query("INSERT INTO run_events(workspace_id,run_id,state) VALUES($1,$2,'succeeded')",[run.workspace_id,run.id]);
       });
-    }catch{
+    }catch(error){
+      /* Say why, without the signed address or any key: the error code or message, and the result host. */
+      const e=error as {code?:string;status?:number;message?:string};
+      console.error(`Provider output import failed for run ${run.id} (${entry.binding.provider}): ${e.code??e.status??""} ${String(e.message??"").replace(/https?:\/\/\S+/gi,"[address]").slice(0,200)}${outputHost?` host ${outputHost}`:""}`);
       // COMMIT acknowledgement may be lost. Never delete potentially published files.
       for(const asset of saved){try{if(!(await this.pool.query("SELECT id FROM assets WHERE workspace_id=$1 AND id=$2",[run.workspace_id,asset.id])).rowCount)await this.store.remove(run.workspace_id,asset.key);}catch{/* Preserve candidate if database confirmation is unavailable. */}}
       await this.defer(run,messages.output);

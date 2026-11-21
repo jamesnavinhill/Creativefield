@@ -168,8 +168,64 @@ a.release { color: var(--muted); text-decoration: none; }
 a.release:hover { color: var(--text); text-decoration: underline; }
 
 /* Embedded in CreativeField (data-cf-embed, set by h3-editor-embed.js): one quiet bar. Project name and More (...) on
-   the left; the checks chip only when something needs a look; Export as the one main action. Render all drafts and
+   the left; the checks chip only when something needs a look (warn, or bad: something to fix); Export as the one main action. Render all drafts and
    Shortcuts are in More; New project and Close do not apply inside a CreativeField project. */
 [data-cf-embed] #newProject, [data-cf-embed] #close, [data-cf-embed] #renderAll, [data-cf-embed] #shortcuts { display: none !important; }
-[data-cf-embed] #checks:not(.warn) { display: none !important; }
+[data-cf-embed] #checks:not(.warn):not(.bad) { display: none !important; }
 [data-cf-embed] #projectMenu hr[data-cf-item] { border: 0; border-top: 1px solid var(--line, rgba(255,255,255,.08)); margin: 4px 0; }
+
+/*
+ * App parity (NS after The Whisper Beneath review): the same primary, menus, fields and spacing as the app's #ds.
+ *   primary  gold glow (--glow-ring 253,209,0 / --glow-light 255,170,0, --glow-border, --inset-glint), dark fill
+ *   menus    .ds-menu: #1c1e20, hairline .06, radius 12.6, padding 5.4, --shadow-pop; items 36 px, radius 7.2,
+ *            title only (the description is the hover tooltip, set by h3-editor-embed.js)
+ *   fields   text keeps --pad-field (12.6 px) from the rounded edge
+ *   spacing  the top bar and the timeline tools row leave room for 32 px pills and the primary's glow
+ */
+:root {
+  --cf-glow-border: rgba(253, 209, 0, 0.6);
+  --cf-glow: 0 0 0 1px rgba(253, 209, 0, 0.5), 0 0 14px rgba(255, 170, 0, 0.34), 0 0 32px rgba(255, 170, 0, 0.17), inset 0 1.5px 3px rgba(255, 255, 255, 0.05);
+  --cf-glow-strong: 0 0 0 1px rgba(253, 209, 0, 0.85), 0 0 18px rgba(255, 170, 0, 0.52), 0 0 44px rgba(255, 170, 0, 0.28), inset 0 1.5px 3px rgba(255, 255, 255, 0.05);
+  --cf-pop: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+button.primary { border-color: var(--cf-glow-border); box-shadow: var(--cf-glow); }
+button.primary:hover { border-color: var(--cf-glow-border); box-shadow: var(--cf-glow-strong); }
+
+/* Top bar: tall enough for the glow, drawn above the boxes below it so the glow is never cut, and a gap to them. */
+.app { grid-template-rows: 60px minmax(0, 1fr) 6px calc(var(--tl-h) + var(--tl-extra, 0px)); }
+.bar { position: relative; z-index: 2; padding: 0 calc(var(--cf-gap) + 8px); }
+.bin, .inspector { margin-top: 4px; }
+
+/* Icon buttons in the bar (More ...) are round and centred, not text pills. */
+.bar button.tool { width: 32px; height: 32px; min-height: 32px; padding: 0; display: inline-grid; place-items: center; border-radius: 999px; }
+
+/* Menus: one look for every dropdown (project, More, Generate, checks, context, lists). */
+.menu {
+  background: var(--cf-box);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12.6px;
+  padding: 5.4px;
+  box-shadow: var(--cf-pop);
+}
+.menu > button, .bar .menu > button:not(.primary) {
+  display: flex; align-items: center; gap: 7.2px;
+  width: 100%; min-height: 36px; padding: 5.4px 9px;
+  background: transparent; color: var(--text);
+  border: 0; border-radius: 7.2px; box-shadow: none;
+  font-size: 12.6px; font-weight: 400; text-align: left;
+}
+.menu > button:hover:not(:disabled), .menu > button:focus-visible,
+.bar .menu > button:not(.primary):hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+.menu > button b { font-weight: 400; }
+[data-cf-embed] #projectMenu > button > span, [data-cf-embed] #generateMenu > button > span { display: none; }
+[data-cf-embed] #projectMenu, [data-cf-embed] #generateMenu { width: max-content; min-width: 200px; max-width: 280px; }
+#projectDelete { color: var(--danger); }
+
+/* Fields: the text sits a field's padding inside its rounded edge. */
+.field textarea, .note-box textarea { padding: 10.8px 12.6px; }
+.field input, .own-size > input { padding: 0 12.6px; }
+.choice select, .upscale-row select { padding-left: 12.6px; }
+
+/* Timeline tools: the pills get room above and below inside their box. */
+.timeline { grid-template-rows: 52px minmax(0, 1fr); }
+.tl-tools { padding: 0 12.6px; }

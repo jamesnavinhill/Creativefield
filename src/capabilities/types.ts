@@ -64,7 +64,9 @@ export type CapabilityRole = {tool:"create"|"change"|"upscale"|"film-studio"; ta
   pinnedOnly?:boolean;
   /** Other options of the same task this workflow also does (one character as well as several). When it is
    *  ready, worse-ranked workflows for those options are not offered beside it. */
-  covers?:string[]};
+  covers?:string[];
+  /** This workflow's option comes first in its task and is what a first visit picks (the quick one, for example). */
+  defaultOption?:boolean};
 export type FinishStepRequest = { capabilityId: string; controls: Record<string, string | number | boolean>;
   /** Server-derived at admission: the local worker that has this step's pack ready; never accepted from requests. */
   workerId?: string };
@@ -141,6 +143,9 @@ export type CapabilityManifestV2 = {
   /** This workflow is a finish pass on one of its video inputs: the server records the producing run and
    *  the scale in the invocation, so the library can label the result and pair it with its source. */
   upscaleFinish?: {sourceInput:string; scaleControl:string};
+  /** "open_crushed_shadows": the server opens the shadows of a still whose blacks are crushed (server/still-tone.ts),
+   *  before it is stored, so every later step (video, edit) starts from the toned picture. */
+  stillTone?: "open_crushed_shadows";
   /** Where this workflow sits in the app: one of the four tools (Create, Change, Upscale, Film Studio).
    *  Read it through roleOf in roles.ts, which also accepts the older `finishStep`. */
   role?: CapabilityRole;

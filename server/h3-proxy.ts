@@ -46,42 +46,53 @@ export async function h3EditorProxyRoutes(app: FastifyInstance, pool: Pool, publ
       return {origin: (request as H3Request).h3Origin};
     },
   };
-  await app.register(proxy, {
-    prefix: "/h3-editor/:workspaceId",
-    rewritePrefix: "/",
-    upstream: "",
-    websocket: true,
-    preHandler(request, reply, done) {
-      void (async () => {
-        try {
-          const path = (request.raw.url ?? "").split("?", 1)[0];
-          const workspaceId = WORKSPACE_PATH.exec(path)?.[1];
-          if (!workspaceId) throw new HttpError(401, "Open the H3 Editor from a workspace");
-          await member(pool, request, workspaceId);
-          if (request.headers.upgrade?.toLowerCase() === "websocket" && request.headers.origin !== publicOrigin)
-            throw new HttpError(403, "WebSocket origin is not allowed");
-          (request as H3Request).h3Origin = await h3WorkerFor(pool, workspaceId);
-          done();
-        } catch (error) {
-          if (error instanceof HttpError) return reply.code(error.statusCode).send({error: error.message});
-          return reply.code(502).send({error: "The H3 Editor is not reachable"});
-        }
-      })();
-    },
-    replyOptions: {
-      getUpstream(request) {
-        const origin = (request as H3Request).h3Origin;
-        if (!origin) throw new HttpError(503, "No authorized H3 worker");
-        return origin;
+  await app.register(async scope => {
+    forwardMultipart(scope);
+    await scope.register(proxy, {
+      prefix: "/h3-editor/:workspaceId",
+      rewritePrefix: "/",
+      upstream: "",
+      websocket: true,
+      preHandler(request, reply, done) {
+        void (async () => {
+          try {
+            const path = (request.raw.url ?? "").split("?", 1)[0];
+            const workspaceId = WORKSPACE_PATH.exec(path)?.[1];
+            if (!workspaceId) throw new HttpError(401, "Open the H3 Editor from a workspace");
+            await member(pool, request, workspaceId);
+            if (request.headers.upgrade?.toLowerCase() === "websocket" && request.headers.origin !== publicOrigin)
+              throw new HttpError(403, "WebSocket origin is not allowed");
+            (request as H3Request).h3Origin = await h3WorkerFor(pool, workspaceId);
+            done();
+          } catch (error) {
+            if (error instanceof HttpError) return reply.code(error.statusCode).send({error: error.message});
+            return reply.code(502).send({error: "The H3 Editor is not reachable"});
+          }
+        })();
       },
-      rewriteRequestHeaders(request, headers) {
-        return forwardHeaders(headers, (request as H3Request).h3Origin);
+      replyOptions: {
+        getUpstream(request) {
+          const origin = (request as H3Request).h3Origin;
+          if (!origin) throw new HttpError(503, "No authorized H3 worker");
+          return origin;
+        },
+        rewriteRequestHeaders(request, headers) {
+          return forwardHeaders(headers, (request as H3Request).h3Origin);
+        },
+        rewriteHeaders(headers) {
+          delete headers["set-cookie"];
+          return {...headers, "x-content-type-options": "nosniff"};
+        },
       },
-      rewriteHeaders(headers) {
-        delete headers["set-cookie"];
-        return {...headers, "x-content-type-options": "nosniff"};
-      },
-    },
-    wsClientOptions: wsOptions,
+      wsClientOptions: wsOptions,
+    });
   });
+}
+
+/* The app reads uploads itself (@fastify/multipart), whose parser leaves a multipart body unread; the proxy then sent
+   the editor an empty body, and every upload from the Film Studio (Add sound, voice, video import, cast picture)
+   failed with "Could not find starting boundary". Inside the proxy's scope the body goes through as the raw stream. */
+export function forwardMultipart(scope: FastifyInstance) {
+  scope.removeContentTypeParser("multipart/form-data");
+  scope.addContentTypeParser("multipart/form-data", (_request, payload, done) => done(null, payload));
 }

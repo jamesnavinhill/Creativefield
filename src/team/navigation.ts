@@ -47,7 +47,7 @@ type ImageMenuAction=
   | {kind:"router";tab:"angles"|"relight"|"upscale"|"cutout"}
   | {kind:"workflow";workflowId:string};
 type ImageMenuEntry={id:string;title:string;text:string;action:ImageMenuAction};
-export type AccountAction="guide"|"settings"|"sign-out-comfy"|"sign-out";
+export type AccountAction="guide"|"settings"|"connect-comfy"|"sign-out-comfy"|"sign-out";
 type AccountNavigation=
   | {kind:"sign-in"}
   | {kind:"menu";items:AccountAction[];showKeyPrivacy:boolean};
@@ -72,6 +72,8 @@ export type NavigationInput={
   workspaceCount?:number;
   workspaceAdmin?:boolean;
   localSingleUser?:boolean;
+  /** Hosted: the visitor has a real account, so the menu has Sign out and Comfy is a later step. */
+  hostedAccount?:boolean;
   access?:"ready"|"offline"|"reconnect";
   runTarget:RunTarget;
   cloud:{worker:boolean;connected?:boolean;canSubmit?:boolean;consent?:boolean};
@@ -321,7 +323,9 @@ function resolveMenu(input:NavigationInput,section:string,models:Models,router:R
     .map(task=>hosted&&task.id==="sharpen"
       ? cloudJobs?{...task,href:"#video/create",workflow:upscale?.id}:{...task,href:"#video/transform/upscale",workflow:undefined}
       : task);
-  const account:AccountNavigation=input.audience==="guest"?{kind:"sign-in"}:{
+  const account:AccountNavigation=input.hostedAccount?{
+    kind:"menu",items:["guide",...(signedIn?["sign-out-comfy"] as const:["connect-comfy"] as const),"sign-out"],showKeyPrivacy:signedIn,
+  }:input.audience==="guest"?{kind:"sign-in"}:{
     kind:"menu",
     items:["guide","settings",...(signedIn?["sign-out-comfy"] as const:input.localSingleUser?[]:["sign-out"] as const)],
     showKeyPrivacy:signedIn,

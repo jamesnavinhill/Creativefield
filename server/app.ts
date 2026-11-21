@@ -1,3 +1,4 @@
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { allowedWorkerOrigins, assertPublicHost, publicTryout } from "./public-host";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
@@ -6,6 +7,7 @@ import type { Pool } from "pg";
 import { z, ZodError } from "zod";
 import type { ServerConfig } from "./config";
 import { HttpError, member, principal, ensureLocalUser, createGuest } from "./auth";
+import { STATE_COOKIE, OAUTH_PROVIDERS, type OAuthProvider, linkAccount, oauthUrl, passwordAuth, supabaseAuthConfig, verifySupabaseToken } from "./accounts";
 import { CLOUD_KEY_HEADER, browserCloudKey, guestRouterKey, forgetBrowserCloudKey, plausibleCloudKey, rememberBrowserCloudKey } from "./cloud-keys";
 import { generateOpaqueToken, hashToken, hashPassword, verifyPassword, newId, encryptProviderSecret } from "./crypto";
 import { guardPool, queryWithRetry, transaction } from "./db";
@@ -155,8 +157,8 @@ export async function buildServer(config: ServerConfig, pool: Pool, dependencies
     try {
       const user = await principal(pool, request);
       /* A session from before guests (the old shared demo account) gets its own guest instead. */
-      if (config.guestPerBrowser && !user.email.endsWith("@guest.creativefield")) throw new HttpError(401, "Session expired");
-      return config.localSingleUser || config.guestPerBrowser ? { ...user, ...facts } : user;
+      if (config.guestPerBrowser && !user.account && !user.email.endsWith("@guest.creativefield")) throw new HttpError(401, "Session expired");
+      return config.localSingleUser || config.guestPerBrowser ? { ...user, ...facts, ...accountFacts() } : user;
     }
     catch (error) {
       if (!(config.localSingleUser || config.guestPerBrowser) || !(error instanceof HttpError) || error.statusCode !== 401) throw error;
@@ -165,8 +167,48 @@ export async function buildServer(config: ServerConfig, pool: Pool, dependencies
       const token = generateOpaqueToken();
       await pool.query("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+($3 * interval '1 hour'))", [hashToken(token), user.id, config.sessionTtlHours]);
       reply.setCookie("cf_session", token, { path: "/", httpOnly: true, sameSite: "strict", secure: config.cookieSecure, maxAge: config.sessionTtlHours * 3600 });
-      return { ...user, ...facts };
+      return { ...user, ...facts, ...accountFacts() };
     }
+  });
+  /* Hosted accounts. The app only offers them when the server has Supabase settings. */
+  const accountFacts = () => config.guestPerBrowser && supabaseAuthConfig() ? { accounts: true } : {};
+  const accountAuth = () => { const settings = config.guestPerBrowser ? supabaseAuthConfig() : undefined; if (!settings) throw new HttpError(404, "Accounts are not set up here"); return settings; };
+  const appOrigin = (_request?: FastifyRequest) => config.publicOrigin.replace(/\/+$/, "");
+  /* A redirect back here only counts in the browser that left from here: its state must match this cookie. */
+  function startRedirect(reply: FastifyReply) {
+    const state = generateOpaqueToken();
+    reply.setCookie(STATE_COOKIE, state, { path: "/api/v1/auth/account", httpOnly: true, sameSite: "lax", secure: config.cookieSecure, maxAge: 3 * 24 * 3600 });
+    return `${appOrigin()}/?cf_state=${encodeURIComponent(state)}`;
+  }
+  async function signInAccount(request: FastifyRequest, reply: FastifyReply, accessToken: string) {
+    const verified = await verifySupabaseToken(accountAuth(), accessToken);
+    const current = await principal(pool, request).catch(() => undefined);
+    const user = await linkAccount(pool, current, verified);
+    if (request.cookies.cf_session) await pool.query("DELETE FROM sessions WHERE token_hash=$1", [hashToken(request.cookies.cf_session)]);
+    const token = generateOpaqueToken();
+    await pool.query("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+($3 * interval '1 hour'))", [hashToken(token), user.id, config.sessionTtlHours]);
+    reply.setCookie("cf_session", token, { path: "/", httpOnly: true, sameSite: "lax", secure: config.cookieSecure, maxAge: config.sessionTtlHours * 3600 });
+    return { id: user.id, email: user.email, account: true };
+  }
+  app.post("/api/v1/auth/account", async (request, reply) => {
+    throttle(request.ip);
+    const input = z.object({ mode: z.enum(["signup", "signin"]), email, password: z.string().min(8).max(256) }).strict().parse(request.body);
+    const result = await passwordAuth(accountAuth(), input.mode, input.email, input.password, startRedirect(reply));
+    if (!result.accessToken) return { confirm: true };
+    return signInAccount(request, reply, result.accessToken);
+  });
+  app.post("/api/v1/auth/account/token", async (request, reply) => {
+    throttle(request.ip);
+    const input = z.object({ accessToken: z.string().min(1).max(4096), state: z.string().min(1).max(128) }).strict().parse(request.body);
+    const expected = request.cookies[STATE_COOKIE];
+    if (!expected || expected !== input.state) throw new HttpError(401, "This sign-in link was started in another browser. Sign in here again.");
+    reply.clearCookie(STATE_COOKIE, { path: "/api/v1/auth/account" });
+    return signInAccount(request, reply, input.accessToken);
+  });
+  app.get("/api/v1/auth/account/oauth/:provider", async (request, reply) => {
+    const provider = (request.params as { provider: string }).provider;
+    if (!(OAUTH_PROVIDERS as readonly string[]).includes(provider)) throw new HttpError(404, "Unknown sign-in provider");
+    return reply.redirect(oauthUrl(accountAuth(), provider as OAuthProvider, startRedirect(reply)));
   });
   app.get("/api/v1/workspaces", async request => {
     const user = await principal(pool, request);
@@ -334,7 +376,9 @@ export async function buildServer(config: ServerConfig, pool: Pool, dependencies
   app.get(`${base}/router-models`,async request=>{
     const {workspaceId}=workspaceParam.parse(request.params);await member(pool,request,workspaceId);
     const connected=!!guestRouterKey(workspaceId)||!!(await pool.query('SELECT id FROM provider_connections WHERE workspace_id=$1 AND provider_id=$2',[workspaceId,'comfy-router'])).rowCount;
-    return {connected,credentialValidation:'not_checked',models:ROUTER_MODELS};
+    /* BYOK: providers this workspace has its own key for; a model with that route runs on it. */
+    const ownKeys=(await pool.query("SELECT provider_id FROM provider_connections WHERE workspace_id=$1 AND provider_id<>'comfy-router'",[workspaceId])).rows.map(r=>String(r.provider_id));
+    return {connected,ownKeys,credentialValidation:'not_checked',models:ROUTER_MODELS};
   });
   app.post(`${base}/provider-connections`, async request => {
     const { workspaceId } = workspaceParam.parse(request.params); await member(pool, request, workspaceId, "admin");

@@ -19,7 +19,7 @@ function WelcomeClipCard({task,clip,onSelect}:{task:StartTask;clip:string;onSele
 }
 
 /** A short introduction, shown once per browser and dismissible at any time. A pick opens that tool directly. */
-export function Welcome({tools,onOpen,onCloud}:{tools:StartTask[];onOpen:(task:StartTask)=>void;/** A hosted try-out: renders run on the visitor's own Comfy Cloud account, signed in from here. */onCloud?:()=>void}) {
+export function Welcome({tools,onOpen,onCloud,cloudLabel}:{tools:StartTask[];onOpen:(task:StartTask)=>void;/** A hosted try-out: renders run on the visitor's own Comfy Cloud account, signed in from here. */onCloud?:()=>void;/** The primary label for onCloud; hosted accounts say "Create free account". */cloudLabel?:string}) {
   const [open, setOpen] = useState(() => {
     try { return localStorage.getItem(WELCOME_KEY) !== "dismissed"; }
     catch { return false; }
@@ -36,6 +36,6 @@ export function Welcome({tools,onOpen,onCloud}:{tools:StartTask[];onOpen:(task:S
     text="Turn a few words, a photo or a clip into pictures, video and 3D. Pick a place to start, or look around first."
     media={<RotatingVideo srcs={[POOL_VIDEOS[LOAD_TURN%POOL_VIDEOS.length]]}/>}
     picks={picks.length?<>{picks.map(t=>{const select=()=>{close();onOpen(t);};const clip=WELCOME_CLIPS[t.id];return clip?<WelcomeClipCard key={t.id} task={t} clip={clip} onSelect={select}/>:<PresetCard key={t.id} size="tool" featured={t.featured} label={t.label} hint={t.text} thumb={examples[t.id]?`/examples/${examples[t.id]}`:t.thumb} onSelect={select}/>;})}</>:undefined}
-    note={<Meta>{onCloud?"Renders run on your own Comfy account and credits, the free plan included. Your key stays in this browser.":"Local generation needs a connected ComfyUI worker and its models."}</Meta>}
-    action={onCloud?<><Button variant="secondary" onClick={close}>Look around</Button><Button variant="primary" onClick={()=>{close();onCloud();}}>Use with Comfy Cloud</Button></>:<Button variant="primary" onClick={close}>Let's create</Button>}/>;
+    note={<Meta>{onCloud?cloudLabel?"Your work is kept in your account. A Comfy key is optional and can be added later.":"Renders run on your own Comfy account and credits, the free plan included. Your key stays in this browser.":"Local generation needs a connected ComfyUI worker and its models."}</Meta>}
+    action={onCloud?<><Button variant="secondary" onClick={close}>Look around</Button><Button variant="primary" onClick={()=>{close();onCloud();}}>{cloudLabel??"Use with Comfy Cloud"}</Button></>:<Button variant="primary" onClick={close}>Let's create</Button>}/>;
 }

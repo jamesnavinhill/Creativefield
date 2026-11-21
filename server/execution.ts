@@ -72,7 +72,10 @@ import {alignedImageInputSnapshotSchema} from "./image-input-admission";
 import {isObjectSwapWorkflow,isOpenJutsuSingleSwap} from "../src/capabilities/tasks";
 import {hyperflowStillReference} from "./hyperflow-reference";
 import {usesH3AudioPolish,withPolishedH3Audio,withSourceAudio,withUpscaledH3Audio} from "./h3-audio-polish";
+import {withTonedStill} from "./still-tone";
+import {type FaceCropPlan,withStitchedFace} from "./face-crop";
 import {VIDEO_REFRAME_ID} from "../src/capabilities/video-reframe";
+import {finishRoleOf} from "../src/capabilities/roles";
 import {withReframedAudio} from "./video-reframe";
 import {VideoExtensionMediaError} from "./video-extension-media";
 import {queueKeepFace,wantsKeepFace} from "./keep-face";
@@ -1107,6 +1110,7 @@ export class ExecutionService {
       const chained=run.invocation?.upscaleChain as {parentRunId?:unknown;sourceAssetId?:unknown}|undefined;
       let upscaleAudio: {file:string;metadata:{defaultTrack:0;originalTrack:1}}|undefined;
       let chainAudio: unknown;
+      let upscaleAudioOptional=false;
       if(declaredMedia==="video"&&typeof chained?.sourceAssetId==="string"){
         const source=(await this.pool.query(
           "SELECT a.storage_key,a.metadata->'audioPolish' AS audio_polish FROM run_inputs i JOIN assets a ON a.id=i.asset_id AND a.workspace_id=i.workspace_id WHERE i.workspace_id=$1 AND i.run_id=$2 AND i.role='source_video' AND a.id=$3",
@@ -1115,6 +1119,17 @@ export class ExecutionService {
         if(!source?.storage_key)throw new PermanentArtifactError("The clip to upscale is unavailable.");
         if(source.audio_polish?.defaultTrack===0&&source.audio_polish.originalTrack===1){
           upscaleAudio={file:await this.store.file(run.workspace_id,source.storage_key),metadata:source.audio_polish};
+        }
+      }else if(declaredMedia==="video"&&finishRoleOf(manifest)?.task==="upscale"){
+        /* An upscale started by hand (Upscale tool, Library) keeps the clip's polished sound too: the upscaler
+           returns only the raw track, which clips and rumbles. If the timing differs, the output stays as made. */
+        const source=(await this.pool.query(
+          "SELECT a.storage_key,a.metadata->'audioPolish' AS audio_polish FROM run_inputs i JOIN assets a ON a.id=i.asset_id AND a.workspace_id=i.workspace_id WHERE i.workspace_id=$1 AND i.run_id=$2 AND i.role='source_video'",
+          [run.workspace_id,run.id],
+        )).rows[0];
+        if(source?.storage_key&&source.audio_polish?.defaultTrack===0&&source.audio_polish.originalTrack===1){
+          upscaleAudio={file:await this.store.file(run.workspace_id,source.storage_key),metadata:source.audio_polish};
+          upscaleAudioOptional=true;
         }
       }
       for(const file of files) {
@@ -1131,6 +1146,15 @@ export class ExecutionService {
             last.contentType=image.contentType;
             last.metadata={...image,generation:{runId:run.id,capabilityId:run.capability_id,capabilityVersion:run.capability_version,routeId:run.route_id,workerId:run.worker_id,prompt:run.invocation?.controls?.prompt,seed:run.invocation?.controls?.seed}};
           }catch{throw new PermanentArtifactError("Worker output is not a valid supported image");}
+          if(manifest.stillTone==="open_crushed_shadows"&&!(last.metadata as ImageMetadata).hasAlpha){
+            /* MiniMax H3-Image crushes its blacks; a fixed tone curve opens them before anything else uses the still.
+               A failed tone pass keeps the still as made. */
+            const toned=await withTonedStill(filename,last.contentType as ImageMetadata["contentType"],output=>this.store.put(run.workspace_id,createReadStream(output))).catch(()=>undefined);
+            if(toned){
+              if(toned.result){const old=last.key;Object.assign(last,toned.result);await this.store.remove(run.workspace_id,old).catch(()=>{});}
+              last.metadata={...last.metadata,stillTone:toned.tone};
+            }
+          }
         }else if(declaredMedia==="audio"){
           try{
             const probe=await probeMedia(filename,"audio");
@@ -1144,13 +1168,18 @@ export class ExecutionService {
         }else{
           if(upscaleAudio){
             const artifact=await withUpscaledH3Audio(upscaleAudio.file,filename,output=>this.store.put(run.workspace_id,createReadStream(output))).catch(error=>{
+              if(error instanceof AudioProcessingError&&upscaleAudioOptional){
+                console.warn(`[runs] ${String(run.id)}: the upscale keeps its own sound: ${error.message}`);return undefined;
+              }
               if(error instanceof AudioProcessingError)throw new PermanentArtifactError(error.message);
               throw error;
             });
-            const workerKey=last.key;
-            Object.assign(last,artifact,{name:last.name.replace(/\.[^.]+$/,".mp4")});
-            await this.store.remove(run.workspace_id,workerKey).catch(()=>{});
-            filename=await this.store.file(run.workspace_id,last.key);
+            if(artifact){
+              const workerKey=last.key;
+              Object.assign(last,artifact,{name:last.name.replace(/\.[^.]+$/,".mp4")});
+              await this.store.remove(run.workspace_id,workerKey).catch(()=>{});
+              filename=await this.store.file(run.workspace_id,last.key);
+            }else upscaleAudio=undefined;
           }
           /* The last step of an Enhance chain takes the sound of the clip the chain started from; without it the clip stays as made. */
           const finishing=run.invocation?.finishChain as Invocation["finishChain"];
@@ -1186,11 +1215,28 @@ export class ExecutionService {
               await this.store.remove(run.workspace_id,old).catch(()=>{});
             }
           }
+          let faceCropAudio:unknown;
+          const faceCrop=run.invocation?.faceCrop as (FaceCropPlan&{sourceAssetId?:string})|undefined;
+          if(faceCrop?.contract==="face_crop_v1"&&typeof faceCrop.sourceAssetId==="string"){
+            /* Far-face pass (face-crop.ts): paste the rendered 768 px face crop back onto the clip it came from.
+               If that fails, the crop render is published as made rather than nothing. */
+            const source=(await this.pool.query("SELECT storage_key,metadata->'audioPolish' AS audio_polish FROM assets WHERE workspace_id=$1 AND id=$2",[run.workspace_id,faceCrop.sourceAssetId])).rows[0];
+            const artifact=source?.storage_key?await withStitchedFace(await this.store.file(run.workspace_id,source.storage_key),filename,faceCrop,24,
+              file=>this.store.put(run.workspace_id,createReadStream(file))).catch(error=>{console.warn(`[face-crop] ${run.id}: kept the crop render: ${(error as Error).message}`);return undefined;}):undefined;
+            if(artifact){
+              const old=last.key;
+              Object.assign(last,artifact);
+              filename=await this.store.file(run.workspace_id,last.key);
+              await this.store.remove(run.workspace_id,old).catch(()=>{});
+              faceCropAudio=source.audio_polish??null;
+            }
+          }
           let video:Awaited<ReturnType<typeof probeVideo>>;
           try{video=await probeVideo(filename);}catch(error){if(error instanceof MediaProbeUnavailableError)throw error;throw new PermanentArtifactError("Worker output is not a valid encoded video");}
           last.metadata=video;
           if(upscaleAudio)last.metadata={...last.metadata,audioPolish:upscaleAudio.metadata};
           else if(chainAudio)last.metadata={...last.metadata,audioPolish:chainAudio};
+          else if(faceCropAudio)last.metadata={...last.metadata,audioPolish:faceCropAudio};
           if(openJutsuTracking)last.metadata={...last.metadata,openJutsuTracking};
           last.contentType=video.container?.includes("webm")?"video/webm":"video/mp4";
           if(run.invocation.mediaSnapshot)last.metadata={...last.metadata,...await verifyMaskedOutput(filename,run.invocation.mediaSnapshot)};
@@ -1199,7 +1245,8 @@ export class ExecutionService {
             last.metadata={...last.metadata,motionOutput:verified,motionSourceSha256:motionRow.receipt.sourceSha256,motionNormalizedSha256:motionRow.receipt.normalizedSha256,motionGraphDigest:motionRow.graphDigest};
             last.contentType="video/mp4";
           }
-          if(!upscaleAudio&&onThisComputer(worker)&&video.hasAudio&&last.contentType==="video/mp4"&&usesH3AudioPolish(manifest.id)){
+          // A stitched far-face clip already carries the source clip's sound tracks.
+          if(!upscaleAudio&&faceCropAudio===undefined&&onThisComputer(worker)&&video.hasAudio&&last.contentType==="video/mp4"&&usesH3AudioPolish(manifest.id)){
             const polished=await withPolishedH3Audio(filename,output=>this.store.put(run.workspace_id,createReadStream(output))).catch(()=>undefined);
             if(polished){
               const originalKey=last.key;
