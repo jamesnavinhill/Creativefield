@@ -24,19 +24,39 @@ const expected: Record<string,string> = {
   "guide:decode":"VAEDecode", "guide:video":"CreateVideo", "guide:save":"SaveVideo",
 };
 
+/** Node 7 may be plain Euler or the EasyFix re-noise sampler. The flash create workflows sample natively in two passes
+ * (IDEA-2466): node 10a runs euler ancestral on the first two sigmas, node 10 (SamplerCustom) runs SamplerLCM on the
+ * rest; 7s splits the sigmas, 7n is the empty negative, 7l the LCM sampler. Every reader of node 10 is unchanged. */
+const SAMPLER_CLASSES = new Set(["KSamplerSelect", "H3ImageSampler"]);
+const PASS_CLASSES = new Set(["SamplerCustomAdvanced", "SamplerCustom"]);
+const NATIVE_PASS: Record<string,string> = {"7s":"SplitSigmas", "7n":"ConditioningZeroOut", "7l":"SamplerLCM", "10a":"SamplerCustomAdvanced"};
+const matches = (id:string, actual:string|undefined, wanted:string) => id === "7" ? !!actual && SAMPLER_CLASSES.has(actual) : id === "10" ? !!actual && PASS_CLASSES.has(actual) : actual === wanted;
+/** Upscale finishes reach at least this many pixels on the long side. */
+export const FINISH_LONG_SIDE = 1472;
+/** The image-to-video finishing scale: the tested 1.44x, or more for small drafts so they still finish at 1472 px. */
+export const finishScale = (width:number, height:number) => Math.max(1.44, FINISH_LONG_SIDE / Math.max(width, height));
+
+/** The native two-pass nodes, when the template has them (all four or none). */
+function nativePassIds(template:ApiGraph):string[] {
+  const present = Object.keys(NATIVE_PASS).filter(id => template[id]);
+  if (!present.length) return [];
+  for (const [id, cls] of Object.entries(NATIVE_PASS)) if (template[id]?.class_type !== cls) throw new Error(`HyperFlow native pass is missing the expected node ${id}`);
+  return Object.keys(NATIVE_PASS);
+}
+
 /** Select exactly one branch, preserving the tested shared draft, prompt, reference and audio.
  * This does not install or approve the experimental worker's custom nodes.
  */
 export function selectHyperflowQuality(template:ApiGraph, quality:HyperflowQuality):ApiGraph {
   if (!Object.hasOwn(stages, quality)) throw new Error("Unknown HyperFlow quality");
-  const selected = new Set<string>([...common, ...stages[quality]]);
+  const selected = new Set<string>([...common, ...stages[quality], ...nativePassIds(template)]);
   // Optional, server-owned image loaders belong to the shared reference conditioner.
   for (const id of ["ref:1", "ref:2", "ref:3"]) if (template[id]) {
     if (template[id].class_type !== "LoadImage") throw new Error(`Unexpected HyperFlow reference node ${id}`);
     selected.add(id);
   }
   for (const id of selected) {
-    if (template[id]?.class_type !== (expected[id] ?? "LoadImage")) throw new Error(`HyperFlow quality template is missing the expected node ${id}`);
+    if (!matches(id, template[id]?.class_type, expected[id] ?? NATIVE_PASS[id] ?? "LoadImage")) throw new Error(`HyperFlow quality template is missing the expected node ${id}`);
   }
   const graph:ApiGraph = {};
   for (const id of selected) graph[id] = structuredClone(template[id]);
@@ -88,9 +108,11 @@ export function buildHyperflowQuality(template:ApiGraph, request:HyperflowReques
     }
   }
   if (request.quality !== "normal") {
-    // Match the tested approximately 1.44x finishing scale, rounded to H3's alignment.
-    graph["finish:up"].inputs.width = 32 * Math.round(request.width * 1.44 / 32);
-    graph["finish:up"].inputs.height = 32 * Math.round(request.height * 1.44 / 32);
+    // The tested ~1.44x finishing scale, and at least FINISH_LONG_SIDE on the long side: the small 480x832 / 832x480
+    // drafts finish at 864x1472 in about the time a 576x1024 clip takes without upscale (IDEA-2466, Fast HD).
+    const scale = finishScale(request.width, request.height);
+    graph["finish:up"].inputs.width = 32 * Math.round(request.width * scale / 32);
+    graph["finish:up"].inputs.height = 32 * Math.round(request.height * scale / 32);
     graph[request.quality === "upscale" ? "finish:tiled" : "guide:tiled"].inputs.seed = request.seed;
   }
   return graph;
@@ -104,8 +126,9 @@ export function buildHyperflowFirstLastFinish(template:ApiGraph, quality:"upscal
   const branch=quality==="upscale"?["finish:tiled","finish:decode","finish:video","finish:save"]:["high-conditioning","guide:tiled","guide:decode","guide:video","guide:save"];
   const classes:Record<string,string>={...expected,"5":"MiniMaxH3ImageToVideo","21":"LoadImage","high-conditioning":"MiniMaxH3ImageToVideo"};
   const graph:ApiGraph={};
+  for(const id of nativePassIds(template))graph[id]=structuredClone(template[id]);
   for(const id of [...commonIds,...branch]){
-    if(template[id]?.class_type!==classes[id])throw new Error(`HyperFlow first/last finish is missing the expected node ${id}`);
+    if(!matches(id,template[id]?.class_type,classes[id]))throw new Error(`HyperFlow first/last finish is missing the expected node ${id}`);
     graph[id]=structuredClone(template[id]);
   }
   const width=Number(graph["5"].inputs.width),height=Number(graph["5"].inputs.height);
@@ -127,8 +150,9 @@ export function selectHyperflowTextFinish(template:ApiGraph, quality:HyperflowQu
   const branch=quality==="normal"?["11","13","14"]:["finish:up-model","finish:up","finish:sigmas","finish:tiled","finish:decode","finish:video","finish:save"];
   const classes:Record<string,string>={...expected,"5":"MiniMaxH3ImageToVideo"};
   const graph:ApiGraph={};
+  for(const id of nativePassIds(template))graph[id]=structuredClone(template[id]);
   for(const id of [...commonIds,...branch]){
-    if(template[id]?.class_type!==classes[id])throw new Error(`HyperFlow text finish is missing the expected node ${id}`);
+    if(!matches(id,template[id]?.class_type,classes[id]))throw new Error(`HyperFlow text finish is missing the expected node ${id}`);
     graph[id]=structuredClone(template[id]);
   }
   if(quality!=="normal"){

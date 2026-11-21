@@ -64,6 +64,18 @@
       "title": "MiniMaxH3ImageConditioning"
     }
   },
+  "6": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": [
+        "5",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Empty negative"
+    }
+  },
   "7": {
     "class_type": "RandomNoise",
     "inputs": {
@@ -77,7 +89,7 @@
     "class_type": "VAEDecode",
     "inputs": {
       "samples": [
-        "7x",
+        "7y",
         0
       ],
       "vae": [
@@ -105,25 +117,11 @@
       "title": "SaveImageAdvanced"
     }
   },
-  "7m": {
-    "class_type": "H3ImageSteering",
-    "inputs": {
-      "model": [
-        "2",
-        0
-      ],
-      "strength": 0.7,
-      "steps": "0"
-    },
-    "_meta": {
-      "title": "EasyFix Steering"
-    }
-  },
   "7g": {
     "class_type": "BasicGuider",
     "inputs": {
       "model": [
-        "7m",
+        "2",
         0
       ],
       "conditioning": [
@@ -135,24 +133,22 @@
       "title": "BasicGuider"
     }
   },
-  "7k": {
-    "class_type": "H3ImageSampler",
+  "7a": {
+    "class_type": "KSamplerSelect",
     "inputs": {
-      "plan": "custom",
-      "custom_plan": "SRRRRS",
-      "s_noise": 0.9
+      "sampler_name": "euler_ancestral"
     },
     "_meta": {
-      "title": "EasyFix Re-Noise Sampler"
+      "title": "Steps 1-2: euler ancestral"
     }
   },
-  "7s": {
+  "7s1": {
     "class_type": "ManualSigmas",
     "inputs": {
-      "sigmas": "1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.5327739119529724, 0.23200887441635132, 0.0"
+      "sigmas": "1, 0.9675236940383911, 0.8875485062599182"
     },
     "_meta": {
-      "title": "Official 6-step grid"
+      "title": "Official grid, steps 1-2"
     }
   },
   "7x": {
@@ -167,11 +163,11 @@
         0
       ],
       "sampler": [
-        "7k",
+        "7a",
         0
       ],
       "sigmas": [
-        "7s",
+        "7s1",
         0
       ],
       "latent_image": [
@@ -180,7 +176,62 @@
       ]
     },
     "_meta": {
-      "title": "SamplerCustomAdvanced"
+      "title": "Pass 1"
+    }
+  },
+  "7l": {
+    "class_type": "SamplerLCM",
+    "inputs": {
+      "s_noise": 0.95,
+      "s_noise_end": 0.95,
+      "noise_clip_std": 0
+    },
+    "_meta": {
+      "title": "Steps 3-6: re-noise (LCM) 0.95"
+    }
+  },
+  "7s2": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "0.8875485062599182, 0.75, 0.5327739119529724, 0.23200887441635132, 0"
+    },
+    "_meta": {
+      "title": "Official grid, steps 3-6"
+    }
+  },
+  "7y": {
+    "class_type": "SamplerCustom",
+    "inputs": {
+      "model": [
+        "2",
+        0
+      ],
+      "add_noise": false,
+      "noise_seed": 42,
+      "cfg": 1,
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "sampler": [
+        "7l",
+        0
+      ],
+      "sigmas": [
+        "7s2",
+        0
+      ],
+      "latent_image": [
+        "7x",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Pass 2"
     }
   }
 }

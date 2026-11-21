@@ -53,6 +53,8 @@ export const APPROVED_LOCAL_CLASSES = new Set([
   // H3 Image EasyFix (PedroMarinhoDev/ComfyUI-H3-Image-EasyFix a73c535, Apache-2.0, installed as h3_image_easyfix_reviewed;
   // source read 2026-11-20: sampler math and a model patch only, loads its own safetensors table, no network, process or eval).
   "H3ImageSampler", "H3ImageSteering",
+  // ComfyUI core samplers for the native-node EasyFix method (comfy_extras/nodes_advanced_samplers, nodes_custom_sampler).
+  "SamplerLCM", "SplitSigmas",
   // FIN-01/02 experimental SD 2.1 inpaint pack.
   "CheckpointLoaderSimple", "VAEEncodeForInpaint",
   "DownloadAndLoadSAM2Model", "Sam2Segmentation",

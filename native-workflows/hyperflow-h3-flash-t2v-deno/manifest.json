@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "id": "hyperflow-h3-flash-t2v-deno",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "title": "HyperFlow H3 Flash text to video with Deno",
   "category": "t2v",
   "description": "Create video from a prompt with HyperFlow H3 Flash, with an optional Deno tiled finish.",
@@ -87,7 +87,13 @@
       "binding": {
         "node": "8",
         "field": "noise_seed"
-      }
+      },
+      "alsoBindings": [
+        {
+          "node": "10",
+          "field": "noise_seed"
+        }
+      ]
     },
     {
       "id": "quality",
@@ -102,7 +108,17 @@
         "node": "ui:quality",
         "field": "value"
       }
-    },{"id":"keep_face","label":"Keep face (one person through head turns)","type":"boolean","default":false,"binding":{"node":"ui:keep_face","field":"value"}}
+    },
+    {
+      "id": "keep_face",
+      "label": "Keep face (one person through head turns)",
+      "type": "boolean",
+      "default": false,
+      "binding": {
+        "node": "ui:keep_face",
+        "field": "value"
+      }
+    }
   ],
   "presets": [],
   "timing": {
@@ -194,6 +210,36 @@
           "name": "minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors",
           "location": "latent_upscale_models",
           "instructions": "Add the MiniMax H3 latent upscaler."
+        },
+        {
+          "id": "node:KSamplerSelect",
+          "kind": "node",
+          "name": "KSamplerSelect",
+          "instructions": "Install a ComfyUI version providing KSamplerSelect."
+        },
+        {
+          "id": "node:SplitSigmas",
+          "kind": "node",
+          "name": "SplitSigmas",
+          "instructions": "Install a ComfyUI version providing SplitSigmas."
+        },
+        {
+          "id": "node:SamplerLCM",
+          "kind": "node",
+          "name": "SamplerLCM",
+          "instructions": "Install a ComfyUI version providing SamplerLCM."
+        },
+        {
+          "id": "node:SamplerCustom",
+          "kind": "node",
+          "name": "SamplerCustom",
+          "instructions": "Install a ComfyUI version providing SamplerCustom."
+        },
+        {
+          "id": "node:ConditioningZeroOut",
+          "kind": "node",
+          "name": "ConditioningZeroOut",
+          "instructions": "Install a ComfyUI version providing ConditioningZeroOut."
         }
       ],
       "evidence": [
@@ -206,7 +252,7 @@
     "hosted": "planned"
   },
   "licenses": {
-    "software": "ComfyUI HyperFlow Flash custom nodes: GPL-3.0.",
+    "software": "ComfyUI HyperFlow Flash custom nodes: GPL-3.0. Sampling: native-node variant of H3 Image EasyFix (method shared by Reddit user barbear22).",
     "weights": [
       {
         "name": "HyperFlow H3 Flash and MiniMax H3 components",
@@ -225,6 +271,16 @@
       "url": "https://github.com/Deno2026/comfyui-deno-custom-nodes",
       "observedAt": "2026-11-07",
       "kind": "implementation"
+    },
+    {
+      "url": "https://github.com/PedroMarinhoDev/ComfyUI-H3-Image-EasyFix",
+      "observedAt": "2026-11-21",
+      "kind": "implementation"
+    },
+    {
+      "url": "https://www.reddit.com/user/barbear22/",
+      "observedAt": "2026-11-21",
+      "kind": "research"
     }
   ],
   "tickets": [],

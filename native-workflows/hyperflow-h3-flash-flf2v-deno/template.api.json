@@ -63,7 +63,10 @@
   "7": {
     "class_type": "KSamplerSelect",
     "inputs": {
-      "sampler_name": "euler"
+      "sampler_name": "euler_ancestral"
+    },
+    "_meta": {
+      "title": "Pass 1 (steps 1-2): euler ancestral"
     }
   },
   "8": {
@@ -86,28 +89,38 @@
     }
   },
   "10": {
-    "class_type": "SamplerCustomAdvanced",
+    "class_type": "SamplerCustom",
     "inputs": {
-      "noise": [
-        "8",
+      "model": [
+        "1",
         0
       ],
-      "guider": [
-        "9",
+      "add_noise": false,
+      "noise_seed": 42,
+      "cfg": 1,
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "7n",
         0
       ],
       "sampler": [
-        "7",
+        "7l",
         0
       ],
       "sigmas": [
-        "6",
-        0
+        "7s",
+        1
       ],
       "latent_image": [
-        "5",
-        1
+        "10a",
+        0
       ]
+    },
+    "_meta": {
+      "title": "Pass 2"
     }
   },
   "11": {
@@ -359,5 +372,74 @@
       "value": "hd-upscale"
     }
   },
-  "ui:keep_face": {"class_type":"PrimitiveBoolean","inputs":{"value":true}}
+  "ui:keep_face": {
+    "class_type": "PrimitiveBoolean",
+    "inputs": {
+      "value": true
+    }
+  },
+  "7s": {
+    "class_type": "SplitSigmas",
+    "inputs": {
+      "sigmas": [
+        "6",
+        0
+      ],
+      "step": 2
+    },
+    "_meta": {
+      "title": "Split after step 2"
+    }
+  },
+  "10a": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "8",
+        0
+      ],
+      "guider": [
+        "9",
+        0
+      ],
+      "sampler": [
+        "7",
+        0
+      ],
+      "sigmas": [
+        "7s",
+        0
+      ],
+      "latent_image": [
+        "5",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Pass 1"
+    }
+  },
+  "7n": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": [
+        "5",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Empty negative"
+    }
+  },
+  "7l": {
+    "class_type": "SamplerLCM",
+    "inputs": {
+      "s_noise": 0.95,
+      "s_noise_end": 0.95,
+      "noise_clip_std": 0
+    },
+    "_meta": {
+      "title": "Pass 2 (steps 3-6): re-noise (LCM) 0.95"
+    }
+  }
 }
